@@ -24,7 +24,16 @@ All events that flow into a hub are sent to a at most one dispatcher (each event
 
 When a spoke is spun up it will establish a connection with the hub. Similar to event nodes a spoke is not a purpose built server, but other services become spokes via the spoke package. Spokes 'register' rooms for which they would like to recieve events, the Hub maintains this list and will only send events to spokes who have registered to recieve events for that room. 
 
-Ingesters should be matched to at most one hub, but there may be multiple hubs - spokes must connect to all hubs to ensure event delivery. 
+Ingesters and spokes should be matched to at most one hub, but there may be multiple hubs
+
+There are three ingestion points for a HUB. Routing is as follows
+
+
+|Source|Destination(s)|
+|------|--------------|
+|Hub|Spokes|
+|Spokes|Hubs, Spokes, Dispatcher|
+|Ingester|Spokes, Hubs|
 
 ### Ingesters
 
