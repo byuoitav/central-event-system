@@ -1,4 +1,4 @@
-#Central Event System
+# Central Event System
 
 In the central event system there are four major players
 
@@ -20,7 +20,7 @@ JSONEvent\n
 
 Where the RoomID acts as the routing tag which controls which spokes the event is sent to, as well as where dispatchers will send the event. 
 
-All events that flow into a hub are sent to a at most one dispatcher (each event will be sent to a single dispatcher, but there may be multiple dispatchers), and the dispatchers determine if the event is to be routed to outside devices. 
+All events that flow into a hub are sent to at most one dispatcher (each event will be sent to a single dispatcher, but there may be multiple dispatchers), and the dispatchers determine if the event is to be routed to outside devices. 
 
 When a spoke is spun up it will establish a connection with the hub. Similar to event nodes a spoke is not a purpose built server, but other services become spokes via the spoke package. Spokes 'register' rooms for which they would like to recieve events, the Hub maintains this list and will only send events to spokes who have registered to recieve events for that room. 
 
