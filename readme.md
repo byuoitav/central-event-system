@@ -26,7 +26,7 @@ When a spoke is spun up it will establish a connection with the hub. Similar to 
 
 Ingesters and spokes should be matched to at most one hub, but there may be multiple hubs
 
-There are three ingestion points for a HUB. Routing is as follows
+There are three sources for a hub. Routing based on source is as follows
 
 
 |Source|Destination(s)|
@@ -39,11 +39,11 @@ There are three ingestion points for a HUB. Routing is as follows
 
 Ingesters provide a websocket endpoint to insert events into the central event system. Outside services connect to the ingesters, and send v2 events up the webscoket. The websocket is persisted for a set period of time after an event is sent, after the period of time elapses without being used, the socket is closed. 
 
-The ingester then adds the tag to the event, and forwards it to a hub. Connections to ingesters can be round robined. 
+The ingester then adds the tag to the event, and forwards it to a hub. Connections to ingesters can be round robined. An ingester is essentially a special case 'write only' spoke. 
 
 ### Dispatchers
 
-Dispatchers accept events from the hub and forward it to outside systems - the current use case for these are to send events that originate in the cloud to systems in room. 
+Dispatchers accept events from the hub and forward it to outside systems - the current use case for these are to send events that originate in the cloud to systems in room. A dispatcher is a special case 'read only' spoke.
 
 ### Spoke
 
