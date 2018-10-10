@@ -40,8 +40,32 @@ func start() {
 		for {
 			select {
 			case e := <-incomingChannel:
-				//got to distrbute the channel
+				if v, ok := spokeRegistry[e.Room]; ok {
+					for i := range v {
+						v[i].Channel <- e.EventWrapper
+					}
+					switch v[i].Source {
+					case base.Ingester:
+						//we send to other hubs
+						for i := range hubRegistry {
+							hubRegistry[i].Channel <- e
+						}
 
+					case base.Spoke:
+						//we send to hubs and dispatchers
+						for i := range hubRegistry {
+							hubRegistry[i].Channel <- e
+						}
+						for i := range dispatcherRegistry {
+							dispatcherRegistry[i].Channel <- e
+						}
+					default:
+						//discard
+						continue
+					}
+				}
+
+				//end case incomingchannel
 			case r := <-registrationChannel:
 				switch r.Type {
 				case base.Spoke:
@@ -65,9 +89,8 @@ func start() {
 				default:
 					log.L.Errorf("Attempt to register an unknown type: %v", r.Type)
 				}
-
+				//end case registrationChannel
 			}
-
 		}
 	}())
 }
