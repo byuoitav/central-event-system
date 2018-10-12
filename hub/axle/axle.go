@@ -1,63 +1,104 @@
-package router
+package axle
 
 import (
 	"sync"
 
 	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/common/log"
+	"github.com/byuoitav/common/nerr"
 )
 
+//A is the default Axle
+//Do this in server.go?
+var A *Axle
+
 func init() {
-	registrationChannel = make(chan base.RegistrationChange)
-	incomingChannel = make(chan base.HubEventWrapper)
+	A = Axle{
+		registrationChannel: make(chan base.RegistrationChange),
+		incomingChannel:     make(chan base.HubEventWrapper),
+	}
 	//start the router
-	go start()
+	go A.start()
 }
 
-var (
+//Axle handles the actuall routing of events around
+type Axle struct {
 	spokeRegistry      map[string][]base.Registration
 	hubRegistry        []base.Registration
 	dispatcherRegistry []base.Registration
 
 	registrationChannel chan base.RegistrationChange
 	incomingChannel     chan base.HubEventWrapper
-)
 
-//RegisterSpoke is called with a set of rooms, and the channel to send events for that room down.
-func RegisterSpoke(rooms []string, channel chan<- base.EventWrapper) error {
-	registrationChannel <- base.RegistrationChange{
-		Type:    base.Spoke,
+	once sync.Once
+}
+
+//RegisterConnection in cases of spokes is called with a set of rooms, and the channel to send events for that room down. in cases of dispatchers and hubs the rooms array is ignored.
+func (a *Axle) RegisterConnection(rooms []string, channel chan<- base.EventWrapper, connID, connType string) *nerr.E {
+	a.registrationChannel <- base.RegistrationChange{
+		Create:  true,
+		ID:      connID,
+		Type:    connType,
 		Rooms:   rooms,
 		Channel: channel,
 	}
 	return nil
 }
 
-var once sync.Once
+//DeregisterConnection will deregsiter the provided connection (type + ID) fro all rooms provided. In cases of dispatchers and hubs the rooms parameter is ignored
+func (a *Axle) DeregisterConnection(rooms []string, connType, connID string) *nerr.E {
 
-func start() {
-	once.Do(func() {
+	a.registrationChannel <- base.RegistrationChange{
+		Create: false,
+		ID:     connID,
+		Type:   connType,
+		Rooms:  rooms,
+	}
+	return nil
+}
+
+//Submit sends an event to the hub for routing
+func (a *Axle) Submit(e EventWrapper, Source, SourceID string) *nerr.E {
+
+	if len(source) == 0 || len(SourceID) == 0 {
+		return nerr.Create("Can't submit blank source or sourceID", "invalid")
+	}
+
+	a.incomingChannel <- base.HubEventWrapper{
+		Source:   Source,
+		SourceID: SourceID,
+		EventWrapper, e,
+	}
+
+	return nil
+}
+
+func (a *Axle) start() {
+	a.once.Do(func() {
 		for {
 			select {
-			case e := <-incomingChannel:
-				if v, ok := spokeRegistry[e.Room]; ok {
+			case e := <-a.incomingChannel:
+				if v, ok := a.spokeRegistry[e.Room]; ok {
+					//we ALWAYS send to spokes
 					for i := range v {
-						v[i].Channel <- e.EventWrapper
-					}
-					switch v[i].Source {
-					case base.Ingester:
-						//we send to other hubs
-						for i := range hubRegistry {
-							hubRegistry[i].Channel <- e
+						if e.Source != base.Spoke || v[i].ID != e.SourceID {
+							v[i].Channel <- e.EventWrapper
 						}
-
+					}
+					//where else do we send it?
+					switch e.Source {
+					case base.Ingester:
+						//we send to other hubs and spokes
+						for i := range a.hubRegistry {
+							a.hubRegistry[i].Channel <- e
+						}
 					case base.Spoke:
-						//we send to hubs and dispatchers
+						//we send to hubs, spokes and dispatchers
 						for i := range hubRegistry {
-							hubRegistry[i].Channel <- e
+							a.hubRegistry[i].Channel <- e
 						}
 						for i := range dispatcherRegistry {
-							dispatcherRegistry[i].Channel <- e
+							a.dispatcherRegistry[i].Channel <- e
 						}
 					default:
 						//discard
@@ -66,25 +107,25 @@ func start() {
 				}
 
 				//end case incomingchannel
-			case r := <-registrationChannel:
+			case r := <-a.registrationChannel:
 				switch r.Type {
 				case base.Spoke:
 					if r.Create {
-						registerSpoke(r)
+						a.registerSpoke(r)
 					} else {
-						deregisterSpoke(r)
+						a.deregisterSpoke(r)
 					}
 				case base.Dispatcher:
 					if r.Create {
-						dispatcherRegistry = addToRegistration(r, dispatcherRegistry)
+						a.dispatcherRegistry = addToRegistration(r, a.dispatcherRegistry)
 					} else {
-						dispatcherRegistry = removeFromRegistration(r, dispatcherRegistry)
+						a.dispatcherRegistry = removeFromRegistration(r, a.dispatcherRegistry)
 					}
 				case base.Hub:
 					if r.Create {
-						hubRegistry = addToRegistration(r, hubRegistry)
+						a.hubRegistry = addToRegistration(r, a.hubRegistry)
 					} else {
-						hubRegistry = removeFromRegistration(r, hubRegistry)
+						a.hubRegistry = removeFromRegistration(r, a.hubRegistry)
 					}
 				default:
 					log.L.Errorf("Attempt to register an unknown type: %v", r.Type)
@@ -95,8 +136,8 @@ func start() {
 	}())
 }
 
-//don't call outside of the start function. Not threadsafe
-func registerSpoke(base.RegistrationChange) {
+//not threadsafe
+func (a *Axle) registerSpoke(base.RegistrationChange) {
 	log.L.Infof("Registering spoke %v for rooms %v", r.ID, r.Rooms)
 	//add
 	for _, cur := range r.Rooms {
@@ -122,8 +163,8 @@ func registerSpoke(base.RegistrationChange) {
 	continue
 }
 
-//don't call outside of the start function. Not threadsafe
-func deregisterSpoke(base.RegistrationChange) {
+//not threadsafe
+func (a *Axle) deregisterSpoke(base.RegistrationChange) {
 
 	for _, cur := range r.Rooms {
 		log.L.Infof("Unregistering spoke %v for rooms %v", r.ID, r.Rooms)

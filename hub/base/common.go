@@ -20,7 +20,8 @@ type EventWrapper struct {
 //HubEventWrapper is just an event wrapper plus a source to help with routing within the axle.
 type HubEventWrapper struct {
 	EventWrapper
-	Source string
+	Source   string
+	SourceID string
 }
 
 //RegistrationChange is used to register or deregister for events
