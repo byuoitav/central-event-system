@@ -1,4 +1,4 @@
-package axle
+package nexus
 
 import (
 	"sync"
@@ -8,24 +8,24 @@ import (
 	"github.com/byuoitav/common/nerr"
 )
 
-//A is the default Axle
+//N is the default Nexus
 //Do this in server.go?
-var A *Axle
+var N *Nexus
 
 func init() {
-	A = Axle{
+	N = &Nexus{
 		registrationChannel: make(chan base.RegistrationChange),
 		incomingChannel:     make(chan base.HubEventWrapper),
 	}
 	//start the router
-	go A.start()
+	go N.start()
 }
 
-//Axle handles the actuall routing of events around
-type Axle struct {
-	spokeRegistry      map[string][]base.Registration
-	hubRegistry        []base.Registration
-	dispatcherRegistry []base.Registration
+//Nexus handles the actuall routing of events around
+type Nexus struct {
+	messengerRegistry   map[string][]base.Registration
+	hubRegistry         []base.Registration
+	broadcasterRegistry []base.Registration
 
 	registrationChannel chan base.RegistrationChange
 	incomingChannel     chan base.HubEventWrapper
@@ -34,71 +34,75 @@ type Axle struct {
 }
 
 //RegisterConnection in cases of spokes is called with a set of rooms, and the channel to send events for that room down. in cases of dispatchers and hubs the rooms array is ignored.
-func (a *Axle) RegisterConnection(rooms []string, channel chan<- base.EventWrapper, connID, connType string) *nerr.E {
-	a.registrationChannel <- base.RegistrationChange{
-		Create:  true,
-		ID:      connID,
-		Type:    connType,
-		Rooms:   rooms,
-		Channel: channel,
+func (n *Nexus) RegisterConnection(rooms []string, channel chan base.EventWrapper, connID, connType string) *nerr.E {
+	n.registrationChannel <- base.RegistrationChange{
+		Create: true,
+		Type:   connType,
+		Rooms:  rooms,
+		Registration: base.Registration{
+			Channel: channel,
+			ID:      connID,
+		},
 	}
 	return nil
 }
 
 //DeregisterConnection will deregsiter the provided connection (type + ID) fro all rooms provided. In cases of dispatchers and hubs the rooms parameter is ignored
-func (a *Axle) DeregisterConnection(rooms []string, connType, connID string) *nerr.E {
+func (n *Nexus) DeregisterConnection(rooms []string, connType, connID string) *nerr.E {
 
-	a.registrationChannel <- base.RegistrationChange{
+	n.registrationChannel <- base.RegistrationChange{
 		Create: false,
-		ID:     connID,
-		Type:   connType,
-		Rooms:  rooms,
+		Registration: base.Registration{
+			ID: connID,
+		},
+		Type:  connType,
+		Rooms: rooms,
 	}
 	return nil
 }
 
 //Submit sends an event to the hub for routing
-func (a *Axle) Submit(e EventWrapper, Source, SourceID string) *nerr.E {
+func (n *Nexus) Submit(e base.EventWrapper, Source, SourceID string) *nerr.E {
 
-	if len(source) == 0 || len(SourceID) == 0 {
+	if len(Source) == 0 || len(SourceID) == 0 {
 		return nerr.Create("Can't submit blank source or sourceID", "invalid")
 	}
 
-	a.incomingChannel <- base.HubEventWrapper{
-		Source:   Source,
-		SourceID: SourceID,
-		EventWrapper, e,
+	n.incomingChannel <- base.HubEventWrapper{
+		Source:       Source,
+		SourceID:     SourceID,
+		EventWrapper: e,
 	}
 
 	return nil
 }
 
-func (a *Axle) start() {
-	a.once.Do(func() {
+func (n *Nexus) start() {
+	n.once.Do(func() {
 		for {
 			select {
-			case e := <-a.incomingChannel:
-				if v, ok := a.spokeRegistry[e.Room]; ok {
+			case e := <-n.incomingChannel:
+				if v, ok := n.messengerRegistry[e.Room]; ok {
 					//we ALWAYS send to spokes
 					for i := range v {
-						if e.Source != base.Spoke || v[i].ID != e.SourceID {
+						if e.Source != base.Messenger || v[i].ID != e.SourceID {
 							v[i].Channel <- e.EventWrapper
 						}
 					}
 					//where else do we send it?
 					switch e.Source {
-					case base.Ingester:
+					case base.Receiver:
 						//we send to other hubs and spokes
-						for i := range a.hubRegistry {
-							a.hubRegistry[i].Channel <- e
+						for i := range n.hubRegistry {
+							n.hubRegistry[i].Channel <- e.EventWrapper
 						}
-					case base.Spoke:
+					case base.Messenger:
 						//we send to hubs, spokes and dispatchers
-						for i := range hubRegistry {
-							a.hubRegistry[i].Channel <- e
+						for i := range n.hubRegistry {
+							n.hubRegistry[i].Channel <- e.EventWrapper
 						}
-						for i := range dispatcherRegistry {
-							a.dispatcherRegistry[i].Channel <- e
+						for i := range n.broadcasterRegistry {
+							n.broadcasterRegistry[i].Channel <- e.EventWrapper
 						}
 					default:
 						//discard
@@ -107,25 +111,25 @@ func (a *Axle) start() {
 				}
 
 				//end case incomingchannel
-			case r := <-a.registrationChannel:
+			case r := <-n.registrationChannel:
 				switch r.Type {
-				case base.Spoke:
+				case base.Messenger:
 					if r.Create {
-						a.registerSpoke(r)
+						n.registerSpoke(r)
 					} else {
-						a.deregisterSpoke(r)
+						n.deregisterSpoke(r)
 					}
-				case base.Dispatcher:
+				case base.Broadcaster:
 					if r.Create {
-						a.dispatcherRegistry = addToRegistration(r, a.dispatcherRegistry)
+						n.broadcasterRegistry = addToRegistration(r, n.broadcasterRegistry)
 					} else {
-						a.dispatcherRegistry = removeFromRegistration(r, a.dispatcherRegistry)
+						n.broadcasterRegistry = removeFromRegistration(r, n.broadcasterRegistry)
 					}
 				case base.Hub:
 					if r.Create {
-						a.hubRegistry = addToRegistration(r, a.hubRegistry)
+						n.hubRegistry = addToRegistration(r, n.hubRegistry)
 					} else {
-						a.hubRegistry = removeFromRegistration(r, a.hubRegistry)
+						n.hubRegistry = removeFromRegistration(r, n.hubRegistry)
 					}
 				default:
 					log.L.Errorf("Attempt to register an unknown type: %v", r.Type)
@@ -133,18 +137,18 @@ func (a *Axle) start() {
 				//end case registrationChannel
 			}
 		}
-	}())
+	})
 }
 
 //not threadsafe
-func (a *Axle) registerSpoke(base.RegistrationChange) {
+func (n *Nexus) registerSpoke(r base.RegistrationChange) {
 	log.L.Infof("Registering spoke %v for rooms %v", r.ID, r.Rooms)
 	//add
 	for _, cur := range r.Rooms {
-		v, ok := spokeRegistry[cur]
+		v, ok := n.messengerRegistry[cur]
 		if !ok {
 			//it doesn't exist
-			spokeRegistry[cur] = []base.Registration{r.Registration}
+			n.messengerRegistry[cur] = []base.Registration{r.Registration}
 			continue
 		}
 		//it does exist, go through and make sure that the registration(s) don't have duplicate(s)
@@ -156,19 +160,18 @@ func (a *Axle) registerSpoke(base.RegistrationChange) {
 			}
 		}
 		//it doesn't exist just create
-		spokeRegistry[cur] = append(v, r.Registration)
+		n.messengerRegistry[cur] = append(v, r.Registration)
 		continue
 	}
 	log.L.Infof("Successfully registered spoke %v for rooms %v", r.ID, r.Rooms)
-	continue
 }
 
 //not threadsafe
-func (a *Axle) deregisterSpoke(base.RegistrationChange) {
+func (n *Nexus) deregisterSpoke(r base.RegistrationChange) {
 
 	for _, cur := range r.Rooms {
 		log.L.Infof("Unregistering spoke %v for rooms %v", r.ID, r.Rooms)
-		v, ok := spokeRegistry[cur]
+		v, ok := n.messengerRegistry[cur]
 		if !ok {
 			//it doesn't exist
 			log.L.Infof("Trying to remove unknown registration: %v:%v", cur, r.ID)
@@ -179,8 +182,8 @@ func (a *Axle) deregisterSpoke(base.RegistrationChange) {
 			if v[i].ID == r.ID {
 				log.L.Infof("Removing spoke registration", cur, r.ID)
 				//remove it
-				v[i] = v[len(a)-1]
-				spokeRegistry[cur] = v[:len(a)-1]
+				v[i] = v[len(v)-1]
+				n.messengerRegistry[cur] = v[:len(v)-1]
 			}
 		}
 		//it doesn't exist
@@ -191,7 +194,6 @@ func (a *Axle) deregisterSpoke(base.RegistrationChange) {
 
 //don't call outside of the start function. Not threadsafe
 func addToRegistration(r base.RegistrationChange, registry []base.Registration) []base.Registration {
-	var present bool
 	log.L.Infof("Registering %v %v", r.Type, r.ID)
 	for i := range registry {
 		if registry[i].ID == r.ID {
@@ -208,13 +210,13 @@ func removeFromRegistration(r base.RegistrationChange, registry []base.Registrat
 
 	//we're deleting
 	log.L.Infof("unregistering %v %v", r.Type, r.ID)
-	var deleted bool
 	for i := range registry {
 		if registry[i].ID == r.ID {
 			log.L.Infof("Removing %v registration %v ", r.Type, r.ID)
+
 			//remove it
-			v[i] = v[len(a)-1]
-			registry[cur] = v[:len(a)-1]
+			registry[i] = registry[len(registry)-1]
+			registry = registry[:len(registry)-1]
 
 			return registry
 		}

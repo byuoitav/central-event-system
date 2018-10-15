@@ -1,14 +1,12 @@
 package base
 
-import "github.com/byuoitav/central-event-system/hub/base"
-
 //Constants for the sources/types
 const (
 	//Spoke .
-	Spoke      = "spoke"
-	Dispatcher = "dispatcher"
-	Ingester   = "ingester"
-	Hub        = "hub"
+	Messenger   = "messenger"
+	Broadcaster = "broadcaster"
+	Receiver    = "reciever"
+	Hub         = "hub"
 )
 
 //EventWrapper is the wrapper class to handle an event and its tag to avoid unmarshaling overheads.
@@ -36,5 +34,5 @@ type RegistrationChange struct {
 //Registration contains information needed to maintain a registration. Both ID and Channel are necessary when submitting a regristation change for a new registration. Only ID is necessary during a deregistration request.
 type Registration struct {
 	ID      string //ID is used to identify a specific channel during de-registration events
-	Channel chan base.EventWrapper
+	Channel chan EventWrapper
 }

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/byuoitav/central-event-system/hub/axle"
 	"github.com/byuoitav/central-event-system/hub/base"
+	"github.com/byuoitav/central-event-system/hub/nexus"
 	"github.com/byuoitav/common/log"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
@@ -37,7 +37,7 @@ var (
 )
 
 func init() {
-	Connection = make(map[string]*HubConnection)
+	Connections = make(map[string]*HubConnection)
 }
 
 //HubConnection represents a connection from the Hub to either a Hub, Spoke, Ingester, or Dispatcher
@@ -49,12 +49,12 @@ type HubConnection struct {
 	WriteChannel chan base.EventWrapper
 	ReadChannel  chan base.EventWrapper
 
-	conn *websocket.Conn
-	axle *axle.Axle
+	conn  *websocket.Conn
+	nexus *nexus.Nexus
 }
 
-//CreateHubConnection promotes a regular http connection to a websocket, starts the read/write pumps, and registers it with the axle
-func CreateHubConnection(resp http.ResponseWriter, req *http.Request, connType string, axle *axle.Axle) error {
+//CreateHubConnection promotes a regular http connection to a websocket, starts the read/write pumps, and registers it with the nexus
+func CreateHubConnection(resp http.ResponseWriter, req *http.Request, connType string, nexus *nexus.Nexus) error {
 	conn, err := upgrader.Upgrade(resp, req, nil)
 	if err != nil {
 		log.L.Errorf("Couldn't upgrade	Connection to a websocket: %v", err.Error())
@@ -63,12 +63,16 @@ func CreateHubConnection(resp http.ResponseWriter, req *http.Request, connType s
 
 	hubConn := &HubConnection{
 		Type:         connType,
-		ID:           req.RemoteAddr + req.URL.String(),
+		ID:           req.RemoteAddr + req.URL.Path,
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
 
 		conn: conn,
 	}
+
+	go hubConn.startReadPump()
+	hubConn.startWritePump()
+	return nil
 
 }
 
@@ -76,7 +80,7 @@ func (h *HubConnection) startReadPump() {
 
 	defer func() {
 		log.L.Infof(color.HiBlueString("[%v] read pump closing", h.ID))
-		h.axle.UnregisterConnection(h.Rooms, h.Type, h.ID)
+		h.nexus.DeregisterConnection(h.Rooms, h.Type, h.ID)
 		h.conn.Close()
 	}()
 
@@ -89,7 +93,7 @@ func (h *HubConnection) startReadPump() {
 
 	//Spokes are the only ones that will send subscription messages, dispatchers and hubs won't
 	for {
-		messageType, b, err = h.conn.ReadMessage(i)
+		messageType, b, err := h.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.L.Errorf("Websocket closing unexpectedly: %v", err)
@@ -98,10 +102,10 @@ func (h *HubConnection) startReadPump() {
 			log.L.Errorf("Error with Read Pump for %v: %v", h.ID, err)
 			return
 		}
-		if h.Type == base.Spoke && messageType == websocket.TextMessage {
+		if h.Type == base.Messenger && messageType == websocket.TextMessage {
 			//it's a subscription change
 		} else {
-			ingestMessage(b)
+			h.ingestMessage(b)
 		}
 	}
 }
@@ -127,16 +131,16 @@ func (h *HubConnection) startWritePump() {
 			}
 
 			//write
-			h.conn.WriteMessage(websocket.BinaryMessage, append([]byte(message.Room+"\n"), message.Event...))
+			err := h.conn.WriteMessage(websocket.BinaryMessage, append([]byte(message.Room+"\n"), message.Event...))
 			if err != nil {
 				log.L.Errorf("%v Error %v", h.ID, err.Error())
 				return
 			}
 
 		case <-ticker.C:
-			s.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			log.Printf("[%v] Sending ping.", h.ID)
-			if err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait)); err != nil {
+			h.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			log.L.Infof("[%v] Sending ping.", h.ID)
+			if err := h.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait)); err != nil {
 				return
 			}
 		}
@@ -149,21 +153,20 @@ Ingest message assumes an event in the format of:
 RoomID\n
 JSONEvent
 */
-func (h *HubConnection) ingestMessage(b []bytes) {
+func (h *HubConnection) ingestMessage(b []byte) {
 
 	//parse out room name
 	index := bytes.IndexByte(b, '\n')
 	if index == -1 {
-		log.L.Errorf("Invalid message format: %v", bytes)
+		log.L.Errorf("Invalid message format: %v", b)
 		return
 	}
 
-	s.router.inChan <- base.HubEventWrapper{
-		EventWrapper: base.EventWrapper{
-			Room:  string(bytes[:index]),
-			Event: bytes[index:],
-		},
-		Source:   h.Type,
-		SourceID: h.ID,
-	}
+	h.nexus.Submit(base.EventWrapper{
+		Room:  string(b[:index]),
+		Event: b[index:],
+	},
+		h.Type,
+		h.ID,
+	)
 }
