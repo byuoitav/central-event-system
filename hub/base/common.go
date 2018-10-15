@@ -30,7 +30,7 @@ type RegistrationChange struct {
 	Registration
 	Type   string
 	Rooms  []string
-	Create bool //if False means to deregister, false means add the registration
+	Create bool //if False means to deregister, true means add the registration
 }
 
 //Registration contains information needed to maintain a registration. Both ID and Channel are necessary when submitting a regristation change for a new registration. Only ID is necessary during a deregistration request.

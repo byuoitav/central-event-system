@@ -1,6 +1,7 @@
 package hubconnection
 
 import (
+	"bytes"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+//Pings are initalized by the hub.
 const (
 	// Time allowed to write a message to the peer.
 	writeWait = 10 * time.Second
@@ -80,32 +82,88 @@ func (h *HubConnection) startReadPump() {
 
 	h.conn.SetReadDeadline(time.Now().Add(pongWait))
 	h.conn.SetPongHandler(func(string) error {
-		log.L.Infof(color.HiCyanString("[%v] pong", h.ID))
+		log.L.Infof("[%v] pong", h.ID)
 		h.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
 	//Spokes are the only ones that will send subscription messages, dispatchers and hubs won't
-	if h.Type == base.Spoke {
-		for {
-			messageType, bytes, err = h.conn.ReadMessage(i)
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-					log.Printf("error: %v", err)
-				}
-				break
+	for {
+		messageType, b, err = h.conn.ReadMessage(i)
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.L.Errorf("Websocket closing unexpectedly: %v", err)
+				return
 			}
-			if messageType == websocket.TextMessage {
-				//it's a subscription change
-				//we need to do the parsing to grab the room name out, then send it to the axle
-				s.router.inChan <- message
-			}
+			log.L.Errorf("Error with Read Pump for %v: %v", h.ID, err)
+			return
 		}
-	} else {
-
+		if h.Type == base.Spoke && messageType == websocket.TextMessage {
+			//it's a subscription change
+		} else {
+			ingestMessage(b)
+		}
 	}
 }
 
 func (h *HubConnection) startWritePump() {
+	log.L.Infof("Starting write pump with a ping timer of %v", pingPeriod)
+	ticker := time.NewTicker(pingPeriod)
 
+	defer func() {
+		log.L.Infof("Write pump for %v closing...", h.ID)
+		ticker.Stop()
+		h.conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-h.WriteChannel:
+			h.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// The hub closed the channel.
+				h.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(writeWait))
+				return
+			}
+
+			//write
+			h.conn.WriteMessage(websocket.BinaryMessage, append([]byte(message.Room+"\n"), message.Event...))
+			if err != nil {
+				log.L.Errorf("%v Error %v", h.ID, err.Error())
+				return
+			}
+
+		case <-ticker.C:
+			s.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			log.Printf("[%v] Sending ping.", h.ID)
+			if err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait)); err != nil {
+				return
+			}
+		}
+
+	}
+}
+
+/*
+Ingest message assumes an event in the format of:
+RoomID\n
+JSONEvent
+*/
+func (h *HubConnection) ingestMessage(b []bytes) {
+
+	//parse out room name
+	index := bytes.IndexByte(b, '\n')
+	if index == -1 {
+		log.L.Errorf("Invalid message format: %v", bytes)
+		return
+	}
+
+	s.router.inChan <- base.HubEventWrapper{
+		EventWrapper: base.EventWrapper{
+			Room:  string(bytes[:index]),
+			Event: bytes[index:],
+		},
+		Source:   h.Type,
+		SourceID: h.ID,
+	}
 }
