@@ -1,4 +1,4 @@
-package hubconnection
+package incomingconnection
 
 import (
 	"bytes"
@@ -29,7 +29,7 @@ const (
 
 //Connections is the map of all active connections - used mostly for monitoring
 var (
-	Connections map[string]*HubConnection
+	Connections map[string]*IncomingConnection
 	upgrader    = websocket.Upgrader{
 		ReadBufferSize:  2048,
 		WriteBufferSize: 2048,
@@ -37,11 +37,11 @@ var (
 )
 
 func init() {
-	Connections = make(map[string]*HubConnection)
+	Connections = make(map[string]*IncomingConnection)
 }
 
-//HubConnection represents a connection from the Hub to either a Hub, Spoke, Ingester, or Dispatcher
-type HubConnection struct {
+//IncomingConnection represents a connection from the Hub to either a Hub, Spoke, Ingester, or Dispatcher
+type IncomingConnection struct {
 	Type  string
 	ID    string
 	Rooms []string
@@ -53,15 +53,15 @@ type HubConnection struct {
 	nexus *nexus.Nexus
 }
 
-//CreateHubConnection promotes a regular http connection to a websocket, starts the read/write pumps, and registers it with the nexus
-func CreateHubConnection(resp http.ResponseWriter, req *http.Request, connType string, nexus *nexus.Nexus) error {
+//CreateConnection promotes a regular http connection to a websocket, starts the read/write pumps, and registers it with the nexus
+func CreateConnection(resp http.ResponseWriter, req *http.Request, connType string, nexus *nexus.Nexus) error {
 	conn, err := upgrader.Upgrade(resp, req, nil)
 	if err != nil {
 		log.L.Errorf("Couldn't upgrade	Connection to a websocket: %v", err.Error())
 		return err
 	}
 
-	hubConn := &HubConnection{
+	hubConn := &IncomingConnection{
 		Type:         connType,
 		ID:           req.RemoteAddr + req.URL.Path,
 		WriteChannel: make(chan base.EventWrapper, 1000),
@@ -76,7 +76,7 @@ func CreateHubConnection(resp http.ResponseWriter, req *http.Request, connType s
 
 }
 
-func (h *HubConnection) startReadPump() {
+func (h *IncomingConnection) startReadPump() {
 
 	defer func() {
 		log.L.Infof(color.HiBlueString("[%v] read pump closing", h.ID))
@@ -110,7 +110,7 @@ func (h *HubConnection) startReadPump() {
 	}
 }
 
-func (h *HubConnection) startWritePump() {
+func (h *IncomingConnection) startWritePump() {
 	log.L.Infof("Starting write pump with a ping timer of %v", pingPeriod)
 	ticker := time.NewTicker(pingPeriod)
 
@@ -153,7 +153,7 @@ Ingest message assumes an event in the format of:
 RoomID\n
 JSONEvent
 */
-func (h *HubConnection) ingestMessage(b []byte) {
+func (h *IncomingConnection) ingestMessage(b []byte) {
 
 	//parse out room name
 	index := bytes.IndexByte(b, '\n')

@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/byuoitav/central-event-system/hub/base"
-	"github.com/byuoitav/central-event-system/hub/hubconnection"
+	"github.com/byuoitav/central-event-system/hub/incomingconnection"
 	"github.com/byuoitav/central-event-system/hub/nexus"
 	"github.com/byuoitav/common"
 	"github.com/labstack/echo"
@@ -22,7 +22,7 @@ func main() {
 		default:
 			return context.JSON(http.StatusBadRequest, "Invalid connection type")
 		}
-		err := hubconnection.CreateHubConnection(context.Response().Writer, context.Request(), base.Messenger, nexus.N)
+		err := incomingconnection.CreateConnection(context.Response().Writer, context.Request(), base.Messenger, nexus.N)
 		if err != nil {
 			return context.JSON(http.StatusInternalServerError, err.Error())
 		}
