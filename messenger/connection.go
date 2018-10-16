@@ -17,8 +17,8 @@ const (
 	retryInterval = 3 * time.Second
 )
 
-//HubConnection is the connection from this receiver to a hub
-type HubConnection struct {
+//Messenger is the connection from this receiver to a hub
+type Messenger struct {
 	HubAddr        string
 	ConnectionType string
 
@@ -34,18 +34,18 @@ type HubConnection struct {
 }
 
 //SendEvent will queue an event to be sent to the central hub
-func (h *HubConnection) SendEvent(b base.EventWrapper) {
+func (h *Messenger) SendEvent(b base.EventWrapper) {
 	h.writeChannel <- b
 }
 
-//ReadEvent requests the next available event from the queue
-func (h *HubConnection) ReadEvent() base.EventWrapper {
+//ReceiveEvent requests the next available event from the queue
+func (h *Messenger) ReceiveEvent() base.EventWrapper {
 	return <-h.readChannel
 }
 
-//ConnectToHub starts a connection to the hub provided, and then returns that value
-func ConnectToHub(HubAddress, connectionType string, bufferSize int) (*HubConnection, *nerr.E) {
-	h := &HubConnection{
+//BuildMessenger starts a connection to the hub provided, and then returns the connection (messenger)
+func BuildMessenger(HubAddress, connectionType string, bufferSize int) (*Messenger, *nerr.E) {
+	h := &Messenger{
 		HubAddr:        HubAddress,
 		ConnectionType: connectionType,
 		writeChannel:   make(chan base.EventWrapper, bufferSize),
@@ -75,7 +75,7 @@ func ConnectToHub(HubAddress, connectionType string, bufferSize int) (*HubConnec
 	return h, nil
 }
 
-func (h *HubConnection) openConnection() error {
+func (h *Messenger) openConnection() error {
 	// open connection to the router
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
@@ -90,7 +90,7 @@ func (h *HubConnection) openConnection() error {
 	return nil
 }
 
-func (h *HubConnection) retryConnection() {
+func (h *Messenger) retryConnection() {
 	// mark the connection as 'down'
 	h.state = h.state + " retrying"
 
@@ -122,7 +122,7 @@ func (h *HubConnection) retryConnection() {
 
 }
 
-func (h *HubConnection) startReadPump() {
+func (h *Messenger) startReadPump() {
 	defer func() {
 		h.conn.Close()
 		log.L.Warnf("Connection to hub %v is dying.", h.HubAddr)
@@ -171,7 +171,7 @@ func (h *HubConnection) startReadPump() {
 
 }
 
-func (h *HubConnection) startWritePump() {
+func (h *Messenger) startWritePump() {
 	defer func() {
 		h.conn.Close()
 		log.L.Warnf("Connection to hub %v is dying. Trying to resurrect.", h.HubAddr)

@@ -2,10 +2,12 @@ package base
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
+	"github.com/byuoitav/common/v2/events"
 )
 
 //Constants for the sources/types
@@ -69,4 +71,28 @@ func ParseMessage(b []byte) (EventWrapper, *nerr.E) {
 //PrepareMessage will take an eventWrapper and return it in the format listed above
 func PrepareMessage(message EventWrapper) []byte {
 	return append([]byte(message.Room+"\n"), message.Event...)
+}
+
+//WrapEvent takes an event and wraps it in the wrappe for use in the central event system
+func WrapEvent(e events.Event) EventWrapper {
+
+	b, err := json.Marshal(e)
+	if err != nil {
+		log.L.Errorf("Couldn't marshal event %v", err.Error())
+		return EventWrapper{}
+	}
+	return EventWrapper{
+		Room:  e.AffectedRoom.RoomID,
+		Event: b,
+	}
+}
+
+//UnwrapEvent .
+func UnwrapEvent(e EventWrapper) (events.Event, *nerr.E) {
+	var ev events.Event
+	err := json.Unmarshal(e.Event, &ev)
+	if err != nil {
+		return ev, nerr.Translate(err).Addf("Couldn't unwrap event")
+	}
+	return ev, nil
 }
