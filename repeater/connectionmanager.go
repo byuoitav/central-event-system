@@ -13,6 +13,11 @@ const (
 	ttl = 5 //time to live in seconds
 )
 
+var (
+	//TTL is TimeToLive
+	TTL = time.Duration(ttl) * time.Second
+)
+
 //ConnectionManager .
 type ConnectionManager struct {
 	conn websocket.Conn
@@ -20,22 +25,26 @@ type ConnectionManager struct {
 	ID   string
 	Room string
 
+	//internal channels
 	readChannel  chan event.Event
 	writeChannel chan event.Event
 
-	timeoutChan chan bool
-	exitChan    chan bool //make at least len 2
+	readExit  chan bool
+	writeExit chan bool
+	errorChan chan error
 
 	writeTimeout time.Time
 	readTimeout  time.Time
+
+	//external channels
+	ReceiveChannel chan event.Event
+	SendChannel    chan event.Event
 }
 
 //We don't try to re-establish this one, nor do we worry about ping/pong joy - we're alive until one of us closes it - hopefully 5 seconds of inactivity
 func (c *ConnectionManager) startReadPump() {
-	TTL := time.Duration(ttl) * time.Second
 
 	c.conn.SetReadDeadline(time.Now().Add(TTL))
-	c.readTimeout = time.Now().Add(TTL)
 	for {
 		var event events.Event
 		t, b, err := c.conn.ReadJSON(&event)
@@ -45,49 +54,29 @@ func (c *ConnectionManager) startReadPump() {
 			} else {
 				netErr, ok := err.(net.Error)
 				if ok && netErr.Timeout() {
-					log.L.Debugf("[%v] ReadTimeout", c.ID, err)
-
-					//let the write worker know that we timed out
-					timeoutChan <- true
-
-					//wait to see if they want to exit, too
-					exit <- exitChan
-					if exit {
-						log.L.Debugf("[%v] Returning", c.ID, err)
+					select {
+					case <-readExit:
 						return
+					default:
+						c.conn.SetReadDeadline(time.Now().Add(TTL))
+						continue
 					}
-
-					log.L.Debugf("[%v] Write not done.", c.ID, err)
-					c.conn.SetReadDeadline(time.Now().Add(TTL))
-					continue
 				}
 			}
 			log.L.Debugf("[%v] Returning", c.ID, err)
-			exitChan <- true
+			c.errorChan <- err
 			return
 		}
 
 		c.readChannel <- m
 
 		c.conn.SetReadDeadline(time.Now().Add(TTL))
-		c.readTimeout = time.Now().Add(TTL)
 	}
-
 }
 
 func (c *ConnectionManager) startWritePump() {
 
-	defer func() {
-		n.conn.Close()
-		c.exitChan <- true
-
-		//TODO:we need to unregister ourselves
-	}()
-
-	TTL := time.Duration(ttl) * time.Second
-	c.writeTimeout = time.Now().Add(TTL)
-
-	t := time.NewTimer(TTL)
+	c.conn.SetWriteDeadline = time.Now().Add(TTL)
 
 	for {
 		select {
@@ -96,25 +85,53 @@ func (c *ConnectionManager) startWritePump() {
 			err := c.conn.WriteJSON(msg)
 			if err != nil {
 				log.L.Warnf("[%v} Problem writing message: %v", c.ID, err.Error())
+				c.errorChan <- err
 				return
 			}
-			t.Reset(TTL)
-			c.writeTimeout = time.Now().Add(TTL)
+			c.conn.SetWriteDeadline = time.Now().Add(TTL)
 
-		case <-c.timeoutChan:
-			//check to see if we've timed out
-			if time.Now().After(c.writeTimeout) {
-				//we've timed out - time to leave
-				return
-			}
-			//we haven't timed out yet, keep waiting
-			c.exitChan <- false
-		case <-t.C:
-			//we've timed out, check the reader
-			if time.Now().After(c.readTimeout) {
-				return
-			}
-			t.Rest(TTL)
+		case <-c.writeExit:
+			return
 		}
 	}
+}
+
+func (c *ConnectionManager) startPumper() {
+	defer func() {
+		//TODO: deregister
+
+		c.writeExit <- true
+		c.readExit <- true
+
+		time.Sleep(TTL)
+		c.conn.Close()
+	}()
+
+	c.readTimeout = time.Now().Add(TTL)
+	c.writeTimeout = time.Now().Add(TTL)
+
+	//start our ticker
+	t := time.NewTicker(TTL)
+	select {
+	case <-t.C:
+		//check to see if read and write are after now
+		if time.Now().After(c.readTimeout) && time.Now().After(c.writeTimeout) {
+			//time to leave
+			return
+		}
+
+	case err := <-c.errorChan:
+		//there was an error
+		log.L.Infof("[%v] error: %v. Closing..", c.ID, err.Error())
+		return
+
+	case e := <-c.SendChannel:
+		c.writeTimeout = time.Now().Add(TTL)
+		c.writeChannel <- e
+
+	case e := <-c.readChannel:
+		c.readTimeout = time.Now().Add(TTL)
+		c.ReceiveChannel <- e
+	}
+
 }
