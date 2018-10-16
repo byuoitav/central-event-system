@@ -1,7 +1,6 @@
 package incomingconnection
 
 import (
-	"bytes"
 	"net/http"
 	"time"
 
@@ -15,16 +14,16 @@ import (
 //Pings are initalized by the hub.
 const (
 	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
+	WriteWait = 10 * time.Second
 
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 60 * time.Second
+	PongWait = 60 * time.Second
 
 	// Time allowed to read the next pong message from the router.
-	pingWait = 90 * time.Second
+	PingWait = 90 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 5) / 10
+	PingPeriod = (PongWait * 5) / 10
 )
 
 //Connections is the map of all active connections - used mostly for monitoring
@@ -60,7 +59,6 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 		log.L.Errorf("Couldn't upgrade	Connection to a websocket: %v", err.Error())
 		return err
 	}
-
 	hubConn := &IncomingConnection{
 		Type:         connType,
 		ID:           req.RemoteAddr + req.URL.Path,
@@ -84,10 +82,10 @@ func (h *IncomingConnection) startReadPump() {
 		h.conn.Close()
 	}()
 
-	h.conn.SetReadDeadline(time.Now().Add(pongWait))
+	h.conn.SetReadDeadline(time.Now().Add(PongWait))
 	h.conn.SetPongHandler(func(string) error {
 		log.L.Infof("[%v] pong", h.ID)
-		h.conn.SetReadDeadline(time.Now().Add(pongWait))
+		h.conn.SetReadDeadline(time.Now().Add(PongWait))
 		return nil
 	})
 
@@ -111,8 +109,8 @@ func (h *IncomingConnection) startReadPump() {
 }
 
 func (h *IncomingConnection) startWritePump() {
-	log.L.Infof("Starting write pump with a ping timer of %v", pingPeriod)
-	ticker := time.NewTicker(pingPeriod)
+	log.L.Infof("Starting write pump with a ping timer of %v", PingPeriod)
+	ticker := time.NewTicker(PingPeriod)
 
 	defer func() {
 		log.L.Infof("Write pump for %v closing...", h.ID)
@@ -123,24 +121,24 @@ func (h *IncomingConnection) startWritePump() {
 	for {
 		select {
 		case message, ok := <-h.WriteChannel:
-			h.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			h.conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			if !ok {
 				// The hub closed the channel.
-				h.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(writeWait))
+				h.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(WriteWait))
 				return
 			}
 
 			//write
-			err := h.conn.WriteMessage(websocket.BinaryMessage, append([]byte(message.Room+"\n"), message.Event...))
+			err := h.conn.WriteMessage(websocket.BinaryMessage, base.PrepareMessage(message))
 			if err != nil {
 				log.L.Errorf("%v Error %v", h.ID, err.Error())
 				return
 			}
 
 		case <-ticker.C:
-			h.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			h.conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			log.L.Infof("[%v] Sending ping.", h.ID)
-			if err := h.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait)); err != nil {
+			if err := h.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(WriteWait)); err != nil {
 				return
 			}
 		}
@@ -154,18 +152,13 @@ RoomID\n
 JSONEvent
 */
 func (h *IncomingConnection) ingestMessage(b []byte) {
-
-	//parse out room name
-	index := bytes.IndexByte(b, '\n')
-	if index == -1 {
-		log.L.Errorf("Invalid message format: %v", b)
+	m, err := base.ParseMessage(b)
+	if err != nil {
+		log.L.Warnf("Received badly formed event %s: %v", b, err.Error())
 		return
 	}
-
-	h.nexus.Submit(base.EventWrapper{
-		Room:  string(b[:index]),
-		Event: b[index:],
-	},
+	h.nexus.Submit(
+		m,
 		h.Type,
 		h.ID,
 	)

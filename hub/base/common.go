@@ -1,5 +1,13 @@
 package base
 
+import (
+	"bytes"
+	"fmt"
+
+	"github.com/byuoitav/common/log"
+	"github.com/byuoitav/common/nerr"
+)
+
 //Constants for the sources/types
 const (
 	//Spoke .
@@ -35,4 +43,30 @@ type RegistrationChange struct {
 type Registration struct {
 	ID      string //ID is used to identify a specific channel during de-registration events
 	Channel chan EventWrapper
+}
+
+/*
+ParseMessage will take a byte array in format of:
+roomID\n
+JSONEvent
+and parse it out
+*/
+func ParseMessage(b []byte) (EventWrapper, *nerr.E) {
+
+	//parse out room name
+	index := bytes.IndexByte(b, '\n')
+	if index == -1 {
+		log.L.Errorf("Invalid message format: %v", b)
+		return EventWrapper{}, nerr.Create(fmt.Sprintf("Invalid format %s", b), "invalid-format")
+	}
+
+	return EventWrapper{
+		Room:  string(b[:index]),
+		Event: b[index:],
+	}, nil
+}
+
+//PrepareMessage will take an eventWrapper and return it in the format listed above
+func PrepareMessage(message EventWrapper) []byte {
+	return append([]byte(message.Room+"\n"), message.Event...)
 }
