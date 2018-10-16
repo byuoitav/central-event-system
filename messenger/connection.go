@@ -1,4 +1,4 @@
-package hubconnection
+package messenger
 
 import (
 	"fmt"
@@ -19,14 +19,13 @@ const (
 
 //HubConnection is the connection from this receiver to a hub
 type HubConnection struct {
-	ID             string
+	HubAddr        string
 	ConnectionType string
 
 	writeChannel chan base.EventWrapper
 	readChannel  chan base.EventWrapper
 
-	conn    *websocket.Conn
-	hubAddr string
+	conn *websocket.Conn
 
 	readDone     chan bool
 	writeDone    chan bool
@@ -44,9 +43,14 @@ func (h *HubConnection) ReadEvent() base.EventWrapper {
 	return <-h.readChannel
 }
 
-//ConnectToHub starts a connection to the hub for this hubconnection
-func (h *HubConnection) ConnectToHub(hubAddress string) error {
-	h.hubAddr = hubAddress
+//ConnectToHub starts a connection to the hub provided, and then returns that value
+func ConnectToHub(HubAddress, connectionType string, bufferSize int) (*HubConnection, *nerr.E) {
+	h := &HubConnection{
+		HubAddr:        HubAddress,
+		ConnectionType: connectionType,
+		writeChannel:   make(chan base.EventWrapper, bufferSize),
+		readChannel:    make(chan base.EventWrapper, bufferSize),
+	}
 
 	// open connection with router
 	err := h.openConnection()
@@ -57,18 +61,18 @@ func (h *HubConnection) ConnectToHub(hubAddress string) error {
 		h.writeDone <- true
 		go h.retryConnection()
 
-		return nerr.Create(fmt.Sprintf("failed to open connection to hub %v. retrying connection...", h.hubAddr), "connection-error")
+		return h, nerr.Create(fmt.Sprintf("failed to open connection to hub %v. retrying connection...", h.HubAddr), "retrying")
 	}
 
 	// update state to good
 	h.state = "good"
-	log.L.Infof(color.HiGreenString("Successfully connected to hub %s. Starting pumps...", h.hubAddr))
+	log.L.Infof(color.HiGreenString("Successfully connected to hub %s. Starting pumps...", h.HubAddr))
 
 	// start read/write pumps
 	go h.startReadPump()
 	go h.startWritePump()
 
-	return nil
+	return h, nil
 }
 
 func (h *HubConnection) openConnection() error {
@@ -77,9 +81,9 @@ func (h *HubConnection) openConnection() error {
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s/connect/%s", h.hubAddr, h.ConnectionType), nil)
+	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s/connect/%s", h.HubAddr, h.ConnectionType), nil)
 	if err != nil {
-		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", h.hubAddr, err), "connection-error")
+		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", h.HubAddr, err), "connection-error")
 	}
 
 	h.conn = conn
@@ -104,7 +108,7 @@ func (h *HubConnection) retryConnection() {
 	err := h.openConnection()
 
 	for err != nil {
-		log.L.Infof("[retry] Retry failed, trying to connect to %s again in %v seconds.", h.hubAddr, retryInterval)
+		log.L.Infof("[retry] Retry failed, trying to connect to %s again in %v seconds.", h.HubAddr, retryInterval)
 		time.Sleep(retryInterval)
 		err = h.openConnection()
 	}
@@ -121,7 +125,7 @@ func (h *HubConnection) retryConnection() {
 func (h *HubConnection) startReadPump() {
 	defer func() {
 		h.conn.Close()
-		log.L.Warnf("Connection to hub %v is dying.", h.hubAddr)
+		log.L.Warnf("Connection to hub %v is dying.", h.HubAddr)
 		h.state = "down"
 
 		h.readDone <- true
@@ -129,7 +133,7 @@ func (h *HubConnection) startReadPump() {
 
 	h.conn.SetPingHandler(
 		func(string) error {
-			log.L.Infof("[%v] Ping!", h.hubAddr)
+			log.L.Infof("[%v] Ping!", h.HubAddr)
 			h.conn.SetReadDeadline(time.Now().Add(incomingconnection.PingWait))
 			h.conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(incomingconnection.WriteWait))
 
@@ -170,7 +174,7 @@ func (h *HubConnection) startReadPump() {
 func (h *HubConnection) startWritePump() {
 	defer func() {
 		h.conn.Close()
-		log.L.Warnf("Connection to hub %v is dying. Trying to resurrect.", h.hubAddr)
+		log.L.Warnf("Connection to hub %v is dying. Trying to resurrect.", h.HubAddr)
 		h.state = "down"
 
 		h.writeDone <- true
