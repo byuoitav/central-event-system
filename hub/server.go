@@ -35,7 +35,9 @@ func main() {
 		return nil
 	})
 
-	router.POST("/interconnect/:address", CreateInterconnection)
+	router.POST("/interconnect/:address", func(context echo.Context) error {
+		return CreateInterconnection(context, nexus.N)
+	})
 	router.GET("/mstatus", mstatus)
 	router.Start(port)
 }
