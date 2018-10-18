@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/byuoitav/central-event-system/hub/base"
-	"github.com/byuoitav/central-event-system/hub/incomingconnection"
+	"github.com/byuoitav/central-event-system/hub/hubconn"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
 	"github.com/fatih/color"
@@ -165,7 +165,7 @@ func (h *Messenger) startReadPump() {
 	h.conn.SetPingHandler(
 		func(string) error {
 			log.L.Infof("[%v] Ping!", h.HubAddr)
-			h.conn.SetReadDeadline(time.Now().Add(incomingconnection.PingWait))
+			h.conn.SetReadDeadline(time.Now().Add(hubconn.PingWait))
 			h.conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(incomingconnection.WriteWait))
 
 			//debugging purposes
@@ -174,7 +174,7 @@ func (h *Messenger) startReadPump() {
 			return nil
 		})
 
-	h.conn.SetReadDeadline(time.Now().Add(incomingconnection.PingWait))
+	h.conn.SetReadDeadline(time.Now().Add(hubconn.PingWait))
 
 	for {
 		t, b, err := h.conn.ReadMessage()
@@ -218,7 +218,7 @@ func (h *Messenger) startWritePump() {
 		select {
 		case message, ok := <-h.writeChannel:
 			if !ok {
-				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(incomingconnection.WriteWait))
+				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(hubconn.WriteWait))
 				return
 			}
 
@@ -230,7 +230,7 @@ func (h *Messenger) startWritePump() {
 
 		case _, ok := <-h.readDone:
 			if !ok {
-				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(incomingconnection.WriteWait))
+				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(hubconn.WriteWait))
 				return
 			}
 			// put it back in
@@ -239,7 +239,7 @@ func (h *Messenger) startWritePump() {
 
 		case s, ok := <-h.subscriptionChannel:
 			if !ok {
-				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(incomingconnection.WriteWait))
+				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(hubconn.WriteWait))
 				return
 			}
 			b, err := json.Marshal(s)

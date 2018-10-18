@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/byuoitav/central-event-system/hub/base"
-	"github.com/byuoitav/central-event-system/hub/incomingconnection"
+	"github.com/byuoitav/central-event-system/hub/hubconn"
 	"github.com/byuoitav/central-event-system/hub/nexus"
 	"github.com/byuoitav/common"
 	"github.com/byuoitav/common/log"
@@ -28,13 +28,14 @@ func main() {
 		default:
 			return context.JSON(http.StatusBadRequest, "Invalid connection type")
 		}
-		err := incomingconnection.CreateConnection(context.Response().Writer, context.Request(), t, nexus.N)
+		err := hubconn.CreateConnection(context.Response().Writer, context.Request(), t, nexus.N)
 		if err != nil {
 			return context.JSON(http.StatusInternalServerError, err.Error())
 		}
 		return nil
 	})
 
+	router.POST("/interconnect/:address", CreateInterconnection)
 	router.GET("/mstatus", mstatus)
 	router.Start(port)
 }

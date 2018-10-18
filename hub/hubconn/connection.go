@@ -1,13 +1,16 @@
-package incomingconnection
+package hubconn
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/central-event-system/hub/nexus"
 	"github.com/byuoitav/common/log"
+	"github.com/byuoitav/common/nerr"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 )
@@ -29,7 +32,7 @@ const (
 
 //Connections is the map of all active connections - used mostly for monitoring
 var (
-	Connections map[string]*IncomingConnection
+	Connections map[string]*connection
 	upgrader    = websocket.Upgrader{
 		ReadBufferSize:  2048,
 		WriteBufferSize: 2048,
@@ -37,11 +40,11 @@ var (
 )
 
 func init() {
-	Connections = make(map[string]*IncomingConnection)
+	Connections = map[string]*connection{}
 }
 
-//IncomingConnection represents a connection from the Hub to either a Hub, Spoke, Ingester, or Dispatcher
-type IncomingConnection struct {
+//connection represents a connection from the Hub to either a Hub, Spoke, Ingester, or Dispatcher
+type connection struct {
 	Type  string
 	ID    string
 	Rooms []string
@@ -60,7 +63,7 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 		log.L.Errorf("Couldn't upgrade	Connection to a websocket: %v", err.Error())
 		return err
 	}
-	hubConn := &IncomingConnection{
+	hubConn := &connection{
 		Type:         connType,
 		ID:           req.RemoteAddr + connType,
 		WriteChannel: make(chan base.EventWrapper, 1000),
@@ -79,7 +82,41 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 
 }
 
-func (h *IncomingConnection) startReadPump() {
+//OpenConnection reaches out to another central event system and establishes a websocket with it, and then registers it with the nexus
+//Do not include protocol with addr,  path will have all leading and trailing `/` characters removed
+func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexus) error {
+	// open connection to the router
+	dialer := &websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	path = strings.Trim(path, "/")
+
+	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s/%s", addr, path), nil)
+	if err != nil {
+		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", addr, err), "connection-error")
+	}
+
+	hubConn := &connection{
+		Type:         connType,
+		ID:           conn.RemoteAddr().String() + connType,
+		WriteChannel: make(chan base.EventWrapper, 1000),
+		ReadChannel:  make(chan base.EventWrapper, 5000),
+
+		conn:  conn,
+		nexus: nexus,
+	}
+
+	//we need to register ourselves
+	nexus.RegisterConnection([]string{}, hubConn.WriteChannel, hubConn.ID, connType)
+
+	go hubConn.startReadPump()
+	go hubConn.startWritePump()
+	return nil
+
+}
+
+func (h *connection) startReadPump() {
 
 	defer func() {
 		log.L.Infof(color.HiBlueString("[%v] read pump closing", h.ID))
@@ -126,7 +163,7 @@ func (h *IncomingConnection) startReadPump() {
 	}
 }
 
-func (h *IncomingConnection) startWritePump() {
+func (h *connection) startWritePump() {
 	log.L.Infof("Starting write pump with a ping timer of %v", PingPeriod)
 	ticker := time.NewTicker(PingPeriod)
 
@@ -169,7 +206,7 @@ Ingest message assumes an event in the format of:
 RoomID\n
 JSONEvent
 */
-func (h *IncomingConnection) ingestMessage(b []byte) {
+func (h *connection) ingestMessage(b []byte) {
 	m, err := base.ParseMessage(b)
 	if err != nil {
 		log.L.Warnf("Received badly formed event %s: %v", b, err.Error())
