@@ -13,10 +13,9 @@ import (
 //Constants for the sources/types
 const (
 	//Spoke .
-	Messenger   = "messenger"
-	Broadcaster = "broadcaster"
-	Receiver    = "reciever"
-	Hub         = "hub"
+	Messenger = "messenger"
+	Repeater  = "repeater"
+	Hub       = "hub"
 )
 
 //EventWrapper is the wrapper class to handle an event and its tag to avoid unmarshaling overheads.
@@ -36,15 +35,20 @@ type HubEventWrapper struct {
 //during deregistration the axle will close the channel, letting the client know that it's safe to exit.
 type RegistrationChange struct {
 	Registration
-	Type   string
-	Rooms  []string
-	Create bool //if False means to deregister, true means add the registration
+	SubscriptionChange
+	Type string `json:"type"`
+}
+
+//SubscriptionChange is used to transmit room subscription changes from the messengers to the hub
+type SubscriptionChange struct {
+	Rooms  []string `json:"rooms"`
+	Create bool     `json:"create"` //if False means to deregister, true means add the registration
 }
 
 //Registration contains information needed to maintain a registration. Both ID and Channel are necessary when submitting a regristation change for a new registration. Only ID is necessary during a deregistration request.
 type Registration struct {
-	ID      string //ID is used to identify a specific channel during de-registration events
-	Channel chan EventWrapper
+	ID      string            `json:"id,omitempty"` //ID is used to identify a specific channel during de-registration events
+	Channel chan EventWrapper `json:"-"`
 }
 
 /*

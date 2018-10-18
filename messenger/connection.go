@@ -1,6 +1,7 @@
 package messenger
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,8 +23,9 @@ type Messenger struct {
 	HubAddr        string
 	ConnectionType string
 
-	writeChannel chan base.EventWrapper
-	readChannel  chan base.EventWrapper
+	writeChannel        chan base.EventWrapper
+	subscriptionChannel chan base.SubscriptionChange
+	readChannel         chan base.EventWrapper
 
 	conn *websocket.Conn
 
@@ -43,19 +45,48 @@ func (h *Messenger) ReceiveEvent() base.EventWrapper {
 	return <-h.readChannel
 }
 
+//SubscribeToRooms .
+func (h *Messenger) SubscribeToRooms(r []string) {
+	if len(r) < 1 {
+		return
+	}
+
+	h.subscriptionChannel <- base.SubscriptionChange{
+		Rooms:  r,
+		Create: true,
+	}
+
+}
+
+//UnsubscribeFromRooms .
+func (h *Messenger) UnsubscribeFromRooms(r []string) {
+	if len(r) < 1 {
+		return
+	}
+
+	h.subscriptionChannel <- base.SubscriptionChange{
+		Rooms:  r,
+		Create: false,
+	}
+}
+
 //BuildMessenger starts a connection to the hub provided, and then returns the connection (messenger)
 func BuildMessenger(HubAddress, connectionType string, bufferSize int) (*Messenger, *nerr.E) {
+	log.L.Infof("starting messenger with %v, connection type %v, buffer size %v", HubAddress, connectionType, bufferSize)
 	h := &Messenger{
-		HubAddr:        HubAddress,
-		ConnectionType: connectionType,
-		writeChannel:   make(chan base.EventWrapper, bufferSize),
-		readChannel:    make(chan base.EventWrapper, bufferSize),
+		HubAddr:             HubAddress,
+		ConnectionType:      connectionType,
+		writeChannel:        make(chan base.EventWrapper, bufferSize),
+		subscriptionChannel: make(chan base.SubscriptionChange, 100),
+		readChannel:         make(chan base.EventWrapper, bufferSize),
+		readDone:            make(chan bool, 1),
+		writeDone:           make(chan bool, 1),
 	}
 
 	// open connection with router
 	err := h.openConnection()
 	if err != nil {
-		log.L.Warnf("Opening connection to hub failed, retrying...")
+		log.L.Warnf("Opening connection to hub failed: %v, retrying...", err.Error())
 
 		h.readDone <- true
 		h.writeDone <- true
@@ -197,10 +228,31 @@ func (h *Messenger) startWritePump() {
 				return
 			}
 
-		case <-h.readDone:
+		case _, ok := <-h.readDone:
+			if !ok {
+				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(incomingconnection.WriteWait))
+				return
+			}
 			// put it back in
 			h.readDone <- true
 			return
+
+		case s, ok := <-h.subscriptionChannel:
+			if !ok {
+				h.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(incomingconnection.WriteWait))
+				return
+			}
+			b, err := json.Marshal(s)
+			if err != nil {
+				log.L.Errorf("Couldn't marshal subscription change: %v", err.Error())
+				continue
+			}
+			err = h.conn.WriteMessage(websocket.TextMessage, b)
+			if err != nil {
+				log.L.Errorf("Problem writing message to socket: %v", err.Error())
+				return
+			}
+
 		}
 	}
 

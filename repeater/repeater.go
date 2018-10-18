@@ -1,7 +1,9 @@
-package repeater
+package main
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -9,12 +11,13 @@ import (
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
 	"github.com/byuoitav/common/v2/events"
+	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
 )
 
 //Repeater .
 type Repeater struct {
-	messenger      messenger.Messenger
+	messenger      *messenger.Messenger
 	connectionLock sync.RWMutex
 	connections    map[string]*PumpingStation //map of IDs to ConnectionManager
 
@@ -24,8 +27,32 @@ type Repeater struct {
 	HubSendBuffer chan events.Event
 }
 
+var (
+	//HubAddress for the repeater to connect to.
+	HubAddress string
+
+	//SendMap is the base map for what rooms send to what pis
+	SendMap map[string][]string
+
+	upgrader = websocket.Upgrader{
+		ReadBufferSize:  2048,
+		WriteBufferSize: 2048,
+	}
+)
+
+func init() {
+	HubAddress = os.Getenv("HUB_ADDRESS")
+	if len(HubAddress) < 1 {
+		log.L.Infof("No hub address specified, default to localhost:7100")
+		HubAddress = "localhost:7100"
+	}
+
+	SendMap := make(map[string][]string)
+	SendMap["ITB-1101"] = []string{"ITB-1101-CP7"}
+}
+
 //GetRepeater .
-func GetRepeater(s map[string][]string, m messenger.Messenger) *Repeater {
+func GetRepeater(s map[string][]string, m *messenger.Messenger) *Repeater {
 	v := &Repeater{
 		sendMap:        s,
 		HubSendBuffer:  make(chan events.Event, 1000),
@@ -43,7 +70,7 @@ func GetRepeater(s map[string][]string, m messenger.Messenger) *Repeater {
 func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	var e events.Event
 	for {
-		e = <-HubSendBuffer
+		e = <-r.HubSendBuffer
 		r.messenger.SendEvent(base.WrapEvent(e))
 	}
 }
@@ -51,22 +78,28 @@ func (r *Repeater) runRepeaterTranslator() *nerr.E {
 //RunRepeater .
 func (r *Repeater) runRepeater() {
 
-	go RunRepeaterTranslator()
+	go r.runRepeaterTranslator()
 
 	var e events.Event
-	var addrs []string
+	var err *nerr.E
+	var conns []string
 	for {
-		e = base.UnwrapEvent(r.Messenger.ReceiveEvent())
+		msg := r.messenger.ReceiveEvent()
+		e, err = base.UnwrapEvent(msg)
+		if err != nil {
+			log.L.Warnf("Couldn't unwrap event: %v", msg)
+			continue
+		}
 
 		//Get the list of places we're sending it
-		sendMapLock.RLock()
-		conns = sendMap[e.AffectedRoom.RoomID]
-		sendMapLock.RUnlock()
+		r.sendMapLock.RLock()
+		conns = r.sendMap[e.AffectedRoom.RoomID]
+		r.sendMapLock.RUnlock()
 
 		for a := range conns {
-			connectionLock.RLock()
-			v, ok := connections[conns[a]]
-			connectionLock.RUnlock()
+			r.connectionLock.RLock()
+			v, ok := r.connections[conns[a]]
+			r.connectionLock.RUnlock()
 
 			if ok {
 				v.SendEvent(e)
@@ -75,19 +108,30 @@ func (r *Repeater) runRepeater() {
 				log.L.Infof("Sending event to %v, need to start a connection...", conns[a])
 				p, err := StartConnection(conns[a], e.AffectedRoom.RoomID, r)
 				if err != nil {
-					log.Errorf("Couldn't start connection with %v", conns[a])
+					log.L.Errorf("Couldn't start connection with %v", conns[a])
 					continue
 				}
 
 				p.SendEvent(e)
 
-				connectionLock.Lock()
-				connections[conns[a]] = p
-				connectionLock.Unlock()
+				r.connectionLock.Lock()
+				r.connections[conns[a]] = p
+				r.connectionLock.Unlock()
 
 			}
 		}
 	}
+}
+
+func (r *Repeater) fireEvent(context echo.Context) error {
+	var e events.Event
+	err := context.Bind(&e)
+	if err != nil {
+		return context.String(http.StatusBadRequest, fmt.Sprintf("Invalid request, must send an event. Error: %v", err.Error()))
+	}
+	r.HubSendBuffer <- e
+
+	return context.String(http.StatusOK, "ok")
 }
 
 func (r *Repeater) handleConnection(context echo.Context) error {
@@ -103,7 +147,7 @@ func (r *Repeater) handleConnection(context echo.Context) error {
 	if er != nil {
 		return context.JSON(http.StatusBadRequest, er.Error())
 	}
-	RegisterConnection(p)
+	r.RegisterConnection(p)
 
 	//so we bock
 	p.startPumper()
@@ -115,25 +159,25 @@ func (r *Repeater) handleConnection(context echo.Context) error {
 func (r *Repeater) RegisterConnection(c *PumpingStation) {
 	log.L.Infof("registering connection to %v", c.ID)
 	//check to see if it's a duplicate id
-	connectionLock.RLock()
-	_, ok := connections[c.ID]
-	connectionLock.RUnlock()
+	r.connectionLock.RLock()
+	_, ok := r.connections[c.ID]
+	r.connectionLock.RUnlock()
 
 	cur := 0
 	for ok {
 		cur++
 		//we need to change the id
 		log.L.Warnf("Duplicate connection: %v, creating connection %v", c.ID, cur)
-		c.ID = fmr.Sprintf("%v:%v", c.ID, cur)
+		c.ID = fmt.Sprintf("%v:%v", c.ID, cur)
 
-		connectionLock.RLock()
-		_, ok := connections[c.ID]
-		connectionLock.RUnlock()
+		r.connectionLock.RLock()
+		_, ok = r.connections[c.ID]
+		r.connectionLock.RUnlock()
 	}
 
-	connectionLock.Lock()
-	connections[c.ID] = c
-	connectionLock.Unlock()
+	r.connectionLock.Lock()
+	r.connections[c.ID] = c
+	r.connectionLock.Unlock()
 
 	log.L.Infof("connection to %v added", c.ID)
 }
@@ -141,8 +185,10 @@ func (r *Repeater) RegisterConnection(c *PumpingStation) {
 //UnregisterConnection .
 func (r *Repeater) UnregisterConnection(id string) {
 	log.L.Infof("Removing registration connection to %v", id)
-	connectionLock.Lock()
-	delete(connections, id)
-	connectionLock.Unlock()
+
+	r.connectionLock.Lock()
+	delete(r.connections, id)
+	r.connectionLock.Unlock()
+
 	log.L.Infof("Done removing registration for %v", id)
 }

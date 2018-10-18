@@ -1,6 +1,7 @@
 package incomingconnection
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -61,12 +62,16 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 	}
 	hubConn := &IncomingConnection{
 		Type:         connType,
-		ID:           req.RemoteAddr + req.URL.Path,
+		ID:           req.RemoteAddr + connType,
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
 
-		conn: conn,
+		conn:  conn,
+		nexus: nexus,
 	}
+
+	//we need to register ourselves
+	nexus.RegisterConnection([]string{}, hubConn.WriteChannel, hubConn.ID, connType)
 
 	go hubConn.startReadPump()
 	hubConn.startWritePump()
@@ -101,7 +106,20 @@ func (h *IncomingConnection) startReadPump() {
 			return
 		}
 		if h.Type == base.Messenger && messageType == websocket.TextMessage {
-			//it's a subscription change
+			//we assume that is'a subscription change
+			var change base.RegistrationChange
+			err := json.Unmarshal(b, &change)
+			if err != nil {
+				log.L.Errorf("Invalid registration change received %s", b)
+				continue
+			}
+
+			//else we submit the subscription chagne
+			change.Type = h.Type
+			change.ID = h.ID
+			change.Channel = h.WriteChannel
+
+			h.nexus.SubmitRegistrationChange(change)
 		} else {
 			h.ingestMessage(b)
 		}

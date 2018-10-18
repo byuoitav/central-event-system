@@ -12,20 +12,29 @@ import (
 //Do this in server.go?
 var N *Nexus
 
-func init() {
+//StartNexus .
+func StartNexus() {
+
+	log.L.Infof("Warping in nexus...")
 	N = &Nexus{
-		registrationChannel: make(chan base.RegistrationChange),
-		incomingChannel:     make(chan base.HubEventWrapper),
+		registrationChannel: make(chan base.RegistrationChange, 100),
+		incomingChannel:     make(chan base.HubEventWrapper, 5000),
+
+		messengerRegistry:  make(map[string][]base.Registration),
+		roomMessengerIndex: make(map[string][]string),
 	}
 	//start the router
 	go N.start()
+	log.L.Infof("Done.")
 }
 
 //Nexus handles the actuall routing of events around
 type Nexus struct {
-	messengerRegistry   map[string][]base.Registration
-	hubRegistry         []base.Registration
-	broadcasterRegistry []base.Registration
+	messengerRegistry  map[string][]base.Registration
+	roomMessengerIndex map[string][]string
+
+	hubRegistry      []base.Registration
+	repeaterRegistry []base.Registration
 
 	registrationChannel chan base.RegistrationChange
 	incomingChannel     chan base.HubEventWrapper
@@ -33,12 +42,20 @@ type Nexus struct {
 	once sync.Once
 }
 
+//SubmitRegistrationChange .
+func (n *Nexus) SubmitRegistrationChange(r base.RegistrationChange) {
+	n.registrationChannel <- r
+}
+
 //RegisterConnection in cases of spokes is called with a set of rooms, and the channel to send events for that room down. in cases of dispatchers and hubs the rooms array is ignored.
 func (n *Nexus) RegisterConnection(rooms []string, channel chan base.EventWrapper, connID, connType string) *nerr.E {
+	log.L.Debugf("Registring connection %v of type %v for rooms %v", connID, connType, rooms)
 	n.registrationChannel <- base.RegistrationChange{
-		Create: true,
-		Type:   connType,
-		Rooms:  rooms,
+		Type: connType,
+		SubscriptionChange: base.SubscriptionChange{
+			Create: true,
+			Rooms:  rooms,
+		},
 		Registration: base.Registration{
 			Channel: channel,
 			ID:      connID,
@@ -51,12 +68,14 @@ func (n *Nexus) RegisterConnection(rooms []string, channel chan base.EventWrappe
 func (n *Nexus) DeregisterConnection(rooms []string, connType, connID string) *nerr.E {
 
 	n.registrationChannel <- base.RegistrationChange{
-		Create: false,
+		Type: connType,
 		Registration: base.Registration{
 			ID: connID,
 		},
-		Type:  connType,
-		Rooms: rooms,
+		SubscriptionChange: base.SubscriptionChange{
+			Create: false,
+			Rooms:  rooms,
+		},
 	}
 	return nil
 }
@@ -78,36 +97,43 @@ func (n *Nexus) Submit(e base.EventWrapper, Source, SourceID string) *nerr.E {
 }
 
 func (n *Nexus) start() {
+	curRepeater := 0
 	n.once.Do(func() {
 		for {
 			select {
 			case e := <-n.incomingChannel:
+				log.L.Debugf("Sending Event from %v of type %v for room %v", e.SourceID, e.Source, e.Room)
 				if v, ok := n.messengerRegistry[e.Room]; ok {
 					//we ALWAYS send to spokes
 					for i := range v {
 						if e.Source != base.Messenger || v[i].ID != e.SourceID {
+							log.L.Debugf("%v", v[i].ID)
 							v[i].Channel <- e.EventWrapper
 						}
 					}
-					//where else do we send it?
-					switch e.Source {
-					case base.Receiver:
-						//we send to other hubs and spokes
-						for i := range n.hubRegistry {
-							n.hubRegistry[i].Channel <- e.EventWrapper
-						}
-					case base.Messenger:
-						//we send to hubs, spokes and dispatchers
-						for i := range n.hubRegistry {
-							n.hubRegistry[i].Channel <- e.EventWrapper
-						}
-						for i := range n.broadcasterRegistry {
-							n.broadcasterRegistry[i].Channel <- e.EventWrapper
-						}
-					default:
-						//discard
-						continue
+				}
+				//where else do we send it?
+				switch e.Source {
+				case base.Repeater:
+					//we send to other hubs and spokes
+					for i := range n.hubRegistry {
+						n.hubRegistry[i].Channel <- e.EventWrapper
 					}
+				case base.Messenger:
+					//we send to hubs, spokes and dispatchers
+					for i := range n.hubRegistry {
+						n.hubRegistry[i].Channel <- e.EventWrapper
+					}
+
+					//we only send to one repeatera
+					curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
+					log.L.Debugf("sending to repeater: %v", curRepeater)
+
+					n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+
+				default:
+					//discard
+					continue
 				}
 
 				//end case incomingchannel
@@ -115,15 +141,15 @@ func (n *Nexus) start() {
 				switch r.Type {
 				case base.Messenger:
 					if r.Create {
-						n.registerSpoke(r)
+						n.registerMessenger(r)
 					} else {
-						n.deregisterSpoke(r)
+						n.deregisterMessenger(r)
 					}
-				case base.Broadcaster:
+				case base.Repeater:
 					if r.Create {
-						n.broadcasterRegistry = addToRegistration(r, n.broadcasterRegistry)
+						n.repeaterRegistry = addToRegistration(r, n.repeaterRegistry)
 					} else {
-						n.broadcasterRegistry = removeFromRegistration(r, n.broadcasterRegistry)
+						n.repeaterRegistry = removeFromRegistration(r, n.repeaterRegistry)
 					}
 				case base.Hub:
 					if r.Create {
@@ -141,14 +167,15 @@ func (n *Nexus) start() {
 }
 
 //not threadsafe
-func (n *Nexus) registerSpoke(r base.RegistrationChange) {
-	log.L.Infof("Registering spoke %v for rooms %v", r.ID, r.Rooms)
+func (n *Nexus) registerMessenger(r base.RegistrationChange) {
+	log.L.Infof("Registering messenger %v for rooms %v", r.ID, r.Rooms)
 	//add
 	for _, cur := range r.Rooms {
 		v, ok := n.messengerRegistry[cur]
 		if !ok {
 			//it doesn't exist
 			n.messengerRegistry[cur] = []base.Registration{r.Registration}
+			n.roomMessengerIndex[r.ID] = append(n.roomMessengerIndex[r.ID], cur)
 			continue
 		}
 		//it does exist, go through and make sure that the registration(s) don't have duplicate(s)
@@ -161,16 +188,21 @@ func (n *Nexus) registerSpoke(r base.RegistrationChange) {
 		}
 		//it doesn't exist just create
 		n.messengerRegistry[cur] = append(v, r.Registration)
+		n.roomMessengerIndex[r.ID] = append(n.roomMessengerIndex[r.ID], cur)
 		continue
 	}
-	log.L.Infof("Successfully registered spoke %v for rooms %v", r.ID, r.Rooms)
+	log.L.Infof("Successfully registered messenger %v for rooms %v", r.ID, r.Rooms)
 }
 
 //not threadsafe
-func (n *Nexus) deregisterSpoke(r base.RegistrationChange) {
+func (n *Nexus) deregisterMessenger(r base.RegistrationChange) {
+	if len(r.Rooms) == 0 {
+		//unregister all for this messenger
+		r.Rooms = n.roomMessengerIndex[r.ID]
+	}
 
 	for _, cur := range r.Rooms {
-		log.L.Infof("Unregistering spoke %v for rooms %v", r.ID, r.Rooms)
+		log.L.Infof("Unregistering messenger %v for rooms %v", r.ID, r.Rooms)
 		v, ok := n.messengerRegistry[cur]
 		if !ok {
 			//it doesn't exist
@@ -180,10 +212,19 @@ func (n *Nexus) deregisterSpoke(r base.RegistrationChange) {
 		//it does exist, find it to be removed
 		for i := range v {
 			if v[i].ID == r.ID {
-				log.L.Infof("Removing spoke registration", cur, r.ID)
+				log.L.Infof("Removing messenger registration", cur, r.ID)
 				//remove it
 				v[i] = v[len(v)-1]
 				n.messengerRegistry[cur] = v[:len(v)-1]
+
+				//remove from the index
+				index := n.roomMessengerIndex[r.ID]
+				for j := range index {
+					if index[j] == cur {
+						index[i] = index[len(index)-1]
+						n.roomMessengerIndex[r.ID] = index[:len(index)-1]
+					}
+				}
 			}
 		}
 		//it doesn't exist

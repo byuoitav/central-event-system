@@ -1,4 +1,4 @@
-package repeater
+package main
 
 import (
 	"fmt"
@@ -26,7 +26,7 @@ const (
 
 //PumpingStation .
 type PumpingStation struct {
-	conn websocket.Conn
+	conn *websocket.Conn
 
 	ID   string
 	Room string
@@ -34,8 +34,8 @@ type PumpingStation struct {
 	remoteaddr string
 
 	//internal channels
-	readChannel  chan event.Event
-	writeChannel chan event.Event
+	readChannel  chan events.Event
+	writeChannel chan events.Event
 
 	readExit  chan bool
 	writeExit chan bool
@@ -45,8 +45,8 @@ type PumpingStation struct {
 	readTimeout  time.Time
 
 	//external channels
-	ReceiveChannel chan event.Event
-	SendChannel    chan event.Event
+	ReceiveChannel chan events.Event
+	SendChannel    chan events.Event
 
 	r *Repeater
 }
@@ -54,11 +54,11 @@ type PumpingStation struct {
 //StartConnection takes a proc number, and will build the buffers, return it while asyncronously starting the connection
 func StartConnection(proc, room string, r *Repeater) (*PumpingStation, *nerr.E) {
 
-	toreturn := &pumpingStation{
-		readChannel:    make(chan event.Event, readBufferSize),
-		writeChannel:   make(chan event.Event, writeBufferSize),
+	toreturn := &PumpingStation{
+		readChannel:    make(chan events.Event, readBufferSize),
+		writeChannel:   make(chan events.Event, writeBufferSize),
 		ReceiveChannel: r.HubSendBuffer,
-		SendChannel:    make(chan event.Event, writeBufferSize),
+		SendChannel:    make(chan events.Event, writeBufferSize),
 		readExit:       make(chan bool, 1),
 		writeExit:      make(chan bool, 1),
 		errorChan:      make(chan error, 2),
@@ -74,11 +74,11 @@ func StartConnection(proc, room string, r *Repeater) (*PumpingStation, *nerr.E) 
 
 func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (*PumpingStation, *nerr.E) {
 
-	toreturn := &pumpingStation{
-		readChannel:    make(chan event.Event, readBufferSize),
-		writeChannel:   make(chan event.Event, writeBufferSize),
+	toreturn := &PumpingStation{
+		readChannel:    make(chan events.Event, readBufferSize),
+		writeChannel:   make(chan events.Event, writeBufferSize),
 		ReceiveChannel: r.HubSendBuffer,
-		SendChannel:    make(chan event.Event, writeBufferSize),
+		SendChannel:    make(chan events.Event, writeBufferSize),
 		readExit:       make(chan bool, 1),
 		writeExit:      make(chan bool, 1),
 		errorChan:      make(chan error, 2),
@@ -97,30 +97,34 @@ func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (
 }
 
 func (c *PumpingStation) start() {
+	log.L.Infof("Starting pumping station...")
 	//we need to get the address of the processor I want to talk to a
 	dev, err := db.GetDB().GetDevice(c.ID)
-	if er != nil {
-		log.L.Errorf("Couldn't retrieve device %v from database: %v", c.ID, er.Error())
+	if err != nil {
+		log.L.Errorf("Couldn't retrieve device %v from database: %v", c.ID, err.Error())
 		c.r.UnregisterConnection(c.ID)
 		return
 	}
 
-	err := c.openConn(dev.Address)
+	err = c.openConn(dev.Address)
 	if err != nil {
 		log.L.Errorf("couldn't initializle for %v: %v", c.ID, err.Error())
 		c.r.UnregisterConnection(c.ID)
 		return
 	}
 
+	log.L.Infof("Connection to hub established, starting pumps...")
+
 	go c.startReadPump()
 	go c.startWritePump()
-	c.startpumper()
+
+	c.startPumper()
 }
 
 func (c *PumpingStation) openConn(addr string) *nerr.E {
 	log.L.Debugf("Starting connection with %v", addr)
 
-	c.remoteaddr = dev.Address
+	c.remoteaddr = addr
 
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
@@ -142,7 +146,7 @@ func (c *PumpingStation) startReadPump() {
 	c.conn.SetReadDeadline(time.Now().Add(TTL))
 	for {
 		var event events.Event
-		t, b, err := c.conn.ReadJSON(&event)
+		err := c.conn.ReadJSON(&event)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.L.Errorf("[%v] Websocket closing: %v", c.ID, err)
@@ -150,7 +154,7 @@ func (c *PumpingStation) startReadPump() {
 				netErr, ok := err.(net.Error)
 				if ok && netErr.Timeout() {
 					select {
-					case <-readExit:
+					case <-c.readExit:
 						return
 					default:
 						c.conn.SetReadDeadline(time.Now().Add(TTL))
@@ -163,7 +167,7 @@ func (c *PumpingStation) startReadPump() {
 			return
 		}
 
-		c.readChannel <- m
+		c.readChannel <- event
 
 		c.conn.SetReadDeadline(time.Now().Add(TTL))
 	}
@@ -171,11 +175,12 @@ func (c *PumpingStation) startReadPump() {
 
 func (c *PumpingStation) startWritePump() {
 
-	c.conn.SetWriteDeadline = time.Now().Add(TTL)
+	c.conn.SetWriteDeadline(time.Now().Add(TTL))
+	var msg events.Event
 
 	for {
 		select {
-		case msg <- c.writeChannel:
+		case msg = <-c.writeChannel:
 			//in the case of the write channel we just write it down the socket
 			err := c.conn.WriteJSON(msg)
 			if err != nil {
@@ -183,7 +188,7 @@ func (c *PumpingStation) startWritePump() {
 				c.errorChan <- err
 				return
 			}
-			c.conn.SetWriteDeadline = time.Now().Add(TTL)
+			c.conn.SetWriteDeadline(time.Now().Add(TTL))
 
 		case <-c.writeExit:
 			return
@@ -192,8 +197,9 @@ func (c *PumpingStation) startWritePump() {
 }
 
 func (c *PumpingStation) startPumper() {
+	log.L.Infof("Starting pumper...")
 	defer func() {
-		r.UnregisterConnection(c.ID)
+		c.r.UnregisterConnection(c.ID)
 
 		c.writeExit <- true
 		c.readExit <- true
@@ -207,8 +213,10 @@ func (c *PumpingStation) startPumper() {
 
 	//start our ticker
 	t := time.NewTicker(TTL)
+	log.L.Debugf("Ticker started")
 	select {
 	case <-t.C:
+		log.L.Debugf("tick. Checking for timeout.")
 		//check to see if read and write are after now
 		if time.Now().After(c.readTimeout) && time.Now().After(c.writeTimeout) {
 			//time to leave
@@ -232,6 +240,6 @@ func (c *PumpingStation) startPumper() {
 }
 
 //SendEvent .
-func (c *PumpingStation) SendEvent(e event.Event) {
+func (c *PumpingStation) SendEvent(e events.Event) {
 	c.SendChannel <- e
 }
