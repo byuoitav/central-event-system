@@ -166,7 +166,7 @@ func (h *Messenger) startReadPump() {
 		func(string) error {
 			log.L.Infof("[%v] Ping!", h.HubAddr)
 			h.conn.SetReadDeadline(time.Now().Add(hubconn.PingWait))
-			h.conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(incomingconnection.WriteWait))
+			h.conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(hubconn.WriteWait))
 
 			//debugging purposes
 			h.lastPingTime = time.Now()
