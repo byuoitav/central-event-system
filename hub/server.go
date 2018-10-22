@@ -44,7 +44,7 @@ func main() {
 }
 
 func mstatus(ctx echo.Context) error {
-	log.L.Infof("MStatus request from %v", ctx.Request().RemoteAddr)
+	log.L.Debugf("MStatus request from %v", ctx.Request().RemoteAddr)
 
 	var s status.MStatus
 	var err error
