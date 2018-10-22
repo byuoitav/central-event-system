@@ -1,0 +1,7 @@
+{
+    "name": "central-event-repeater",
+    "port": ":7101", 
+    "env-vars": [
+        "HUB_ADDRESS"
+    ]
+}
