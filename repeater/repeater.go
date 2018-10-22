@@ -48,7 +48,7 @@ func init() {
 	}
 
 	SendMap := make(map[string][]string)
-	SendMap["ITB-1101"] = []string{"ITB-1101-CP7"}
+	SendMap["ITB-1101"] = []string{"ITB-1101-CP8"}
 }
 
 //GetRepeater .

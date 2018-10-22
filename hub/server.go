@@ -39,6 +39,7 @@ func main() {
 		return CreateInterconnection(context, nexus.N)
 	})
 	router.GET("/mstatus", mstatus)
+	router.GET("/status", mstatus)
 	router.Start(port)
 }
 
