@@ -1,7 +1,10 @@
 {
     "name": "central-event-repeater",
-    "port": ":7101", 
+    "port": ":7101",
     "env-vars": [
-        "HUB_ADDRESS"
+        "DB_PASSWORD",
+        "HUB_ADDRESS",
+        "DB_USERNAME",
+        "DB_ADDRESS"
     ]
 }

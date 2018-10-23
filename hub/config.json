@@ -1,7 +1,9 @@
 {
     "name": "central-event-hub",
-    "port": ":7100", 
+    "port": ":7100",
     "env-vars": [
-        "TEST"
+        "DB_PASSWORD",
+        "DB_USERNAME",
+        "DB_ADDRESS"
     ]
 }
