@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-	log.SetLevel("debug")
 	port := ":7100"
 
 	nexus.StartNexus()
