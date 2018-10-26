@@ -9,7 +9,6 @@ import (
 	"github.com/byuoitav/central-event-system/hub/nexus"
 	"github.com/byuoitav/common"
 	"github.com/byuoitav/common/log"
-	"github.com/byuoitav/common/status"
 	"github.com/labstack/echo"
 )
 
