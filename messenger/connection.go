@@ -9,6 +9,7 @@ import (
 	"github.com/byuoitav/central-event-system/hub/hubconn"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
+	"github.com/byuoitav/common/v2/events"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 )
@@ -36,12 +37,22 @@ type Messenger struct {
 }
 
 //SendEvent will queue an event to be sent to the central hub
-func (h *Messenger) SendEvent(b base.EventWrapper) {
+func (h *Messenger) SendEvent(e events.Event) {
+	h.send(base.WrapEvent(e))
+}
+
+func (h *Messenger) send(b base.EventWrapper) {
 	h.writeChannel <- b
 }
 
 //ReceiveEvent requests the next available event from the queue
-func (h *Messenger) ReceiveEvent() base.EventWrapper {
+func (h *Messenger) ReceiveEvent() events.Event {
+	var e events.Event
+	json.Unmarshal(h.receive().Event, e)
+	return e
+}
+
+func (h *Messenger) receive() base.EventWrapper {
 	return <-h.readChannel
 }
 
