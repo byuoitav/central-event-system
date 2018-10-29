@@ -268,3 +268,20 @@ func (h *Messenger) startWritePump() {
 	}
 
 }
+
+// GetState returns the state of the messenger connection to the hub.
+func (h *Messenger) GetState() interface{} {
+	values := make(map[string]interface{})
+
+	values["hub"] = h.HubAddr
+
+	if h.conn != nil {
+		values["connection"] = fmt.Sprintf("%v => %v", h.conn.LocalAddr().String(), h.conn.RemoteAddr().String())
+	} else {
+		values["connection"] = fmt.Sprintf("%v => %v", "local", h.HubAddr)
+	}
+
+	values["state"] = h.state
+	values["last-ping-time"] = h.lastPingTime.Format(time.RFC3339)
+	return values
+}
