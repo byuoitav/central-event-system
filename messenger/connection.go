@@ -45,6 +45,11 @@ func (h *Messenger) ReceiveEvent() base.EventWrapper {
 	return <-h.readChannel
 }
 
+//SetReceiveChannel can be called to wire up a read channel.
+func (h *Messenger) SetReceiveChannel(c chan base.EventWrapper) {
+	h.readChannel = c
+}
+
 //SubscribeToRooms .
 func (h *Messenger) SubscribeToRooms(r []string) {
 	if len(r) < 1 {
