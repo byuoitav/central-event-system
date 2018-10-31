@@ -9,6 +9,7 @@
         "HUB_ADDRESS",
         "DB_USERNAME",
         "STOP_REPLICATION",
-        "DB_ADDRESS"
+        "DB_ADDRESS",
+        "VERSION"
     ]
 }

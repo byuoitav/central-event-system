@@ -122,7 +122,7 @@ func (c *PumpingStation) start() {
 		return
 	}
 
-	log.L.Infof("Connection to hub established, starting pumps...")
+	log.L.Infof("Connection to %v established, starting pumps...", addr)
 
 	go c.startReadPump()
 	go c.startWritePump()
@@ -139,7 +139,7 @@ func (c *PumpingStation) openConn(addr string) *nerr.E {
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s:%s/repeaterconn", addr, translatorport), nil)
+	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s:%s/connect/%s/%s", addr, translatorport, c.Room, c.r.RepeaterID), nil)
 	if err != nil {
 		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", addr, err), "connection-error")
 	}
@@ -223,27 +223,29 @@ func (c *PumpingStation) startPumper() {
 	//start our ticker
 	t := time.NewTicker(TTL)
 	log.L.Debugf("Ticker started")
-	select {
-	case <-t.C:
-		log.L.Debugf("tick. Checking for timeout.")
-		//check to see if read and write are after now
-		if time.Now().After(c.readTimeout) && time.Now().After(c.writeTimeout) {
-			//time to leave
+	for {
+		select {
+		case <-t.C:
+			log.L.Debugf("tick. Checking for timeout.")
+			//check to see if read and write are after now
+			if time.Now().After(c.readTimeout) && time.Now().After(c.writeTimeout) {
+				//time to leave
+				return
+			}
+
+		case err := <-c.errorChan:
+			//there was an error
+			log.L.Infof("[%v] error: %v. Closing..", c.ID, err.Error())
 			return
+
+		case e := <-c.SendChannel:
+			c.writeTimeout = time.Now().Add(TTL)
+			c.writeChannel <- e
+
+		case e := <-c.readChannel:
+			c.readTimeout = time.Now().Add(TTL)
+			c.ReceiveChannel <- e
 		}
-
-	case err := <-c.errorChan:
-		//there was an error
-		log.L.Infof("[%v] error: %v. Closing..", c.ID, err.Error())
-		return
-
-	case e := <-c.SendChannel:
-		c.writeTimeout = time.Now().Add(TTL)
-		c.writeChannel <- e
-
-	case e := <-c.readChannel:
-		c.readTimeout = time.Now().Add(TTL)
-		c.ReceiveChannel <- e
 	}
 
 }

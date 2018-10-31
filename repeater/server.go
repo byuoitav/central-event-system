@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/central-event-system/messenger"
 	"github.com/byuoitav/common"
@@ -20,7 +22,7 @@ func main() {
 		}
 	}
 
-	r := GetRepeater(SendMap, m)
+	r := GetRepeater(SendMap, m, os.Getenv("SYSTEM_ID"))
 
 	router := common.NewRouter()
 

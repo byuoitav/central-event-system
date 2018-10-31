@@ -24,6 +24,7 @@ type Repeater struct {
 	sendMapLock sync.RWMutex
 
 	HubSendBuffer chan events.Event
+	RepeaterID    string
 }
 
 var (
@@ -57,7 +58,7 @@ func init() {
 }
 
 //GetRepeater .
-func GetRepeater(s map[string][]string, m *messenger.Messenger) *Repeater {
+func GetRepeater(s map[string][]string, m *messenger.Messenger, id string) *Repeater {
 	v := &Repeater{
 		sendMap:        s,
 		HubSendBuffer:  make(chan events.Event, 1000),
@@ -65,6 +66,7 @@ func GetRepeater(s map[string][]string, m *messenger.Messenger) *Repeater {
 		connectionLock: sync.RWMutex{},
 		connections:    make(map[string]*PumpingStation),
 		messenger:      m,
+		RepeaterID:     id,
 	}
 	go v.runRepeater()
 
