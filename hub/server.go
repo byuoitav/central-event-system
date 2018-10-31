@@ -13,7 +13,11 @@ import (
 	"github.com/labstack/echo"
 )
 
-func init() {
+func main() {
+	port := ":7100"
+
+	nexus.StartNexus()
+
 	// if this hub is in a room, create an interconnection with the rest of the hubs in the room
 	if len(os.Getenv("ROOM_SYSTEM")) > 0 {
 		addresses := GetHubAddresses()
@@ -22,12 +26,6 @@ func init() {
 			go hubconn.OpenConnection(addresses[i]+":7100", "/connect/hub", base.Hub, nexus.N)
 		}
 	}
-}
-
-func main() {
-	port := ":7100"
-
-	nexus.StartNexus()
 
 	router := common.NewRouter()
 

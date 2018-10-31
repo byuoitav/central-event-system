@@ -56,6 +56,7 @@ func GetHubAddresses() []string {
 	myNum, _ := strconv.Atoi(matches[0][1])
 	log.L.Debugf("My processor number: %v", myNum)
 
+	// +deployment not-required
 	for len(os.Getenv("STOP_REPLICATION")) > 0 {
 		// wait unil the database is ready for us
 		state, err := db.GetDB().GetStatus()

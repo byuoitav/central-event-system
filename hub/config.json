@@ -2,8 +2,12 @@
     "name": "central-event-hub",
     "port": ":7100",
     "env-vars": [
-        "DB_PASSWORD",
+        "DEV_HUB",
+        "STOP_REPLICATION",
+        "SYSTEM_ID",
         "DB_USERNAME",
+        "ROOM_SYSTEM",
+        "DB_PASSWORD",
         "DB_ADDRESS"
     ]
 }

@@ -46,9 +46,15 @@ func init() {
 		log.L.Infof("No hub address specified, default to localhost:7100")
 		HubAddress = "localhost:7100"
 	}
+	var err *nerr.E
 
-	SendMap := make(map[string][]string)
-	SendMap["ITB-1101"] = []string{"ITB-1101-CP8"}
+	SendMap, err = BuildSendList()
+	for k, v := range SendMap {
+		log.L.Infof("%v: %v", k, v)
+	}
+	if err != nil {
+		log.L.Fatalf("Couldn't initialize the repeater: %v", err.Error())
+	}
 }
 
 //GetRepeater .
@@ -83,6 +89,7 @@ func (r *Repeater) runRepeater() {
 	var e events.Event
 	var err *nerr.E
 	var conns []string
+	var starconns []string
 	for {
 		msg := r.messenger.ReceiveEvent()
 		e, err = base.UnwrapEvent(msg)
@@ -94,6 +101,7 @@ func (r *Repeater) runRepeater() {
 		//Get the list of places we're sending it
 		r.sendMapLock.RLock()
 		conns = r.sendMap[e.AffectedRoom.RoomID]
+		starconns = r.sendMap["*"]
 		r.sendMapLock.RUnlock()
 
 		for a := range conns {
@@ -106,7 +114,31 @@ func (r *Repeater) runRepeater() {
 			} else {
 				//we need to start a connection, register it, and then send this connection down that channel
 				log.L.Infof("Sending event to %v, need to start a connection...", conns[a])
-				p, err := StartConnection(conns[a], e.AffectedRoom.RoomID, r)
+				p, err := StartConnection(conns[a], e.AffectedRoom.RoomID, r, true)
+				if err != nil {
+					log.L.Errorf("Couldn't start connection with %v", conns[a])
+					continue
+				}
+
+				p.SendEvent(e)
+
+				r.connectionLock.Lock()
+				r.connections[conns[a]] = p
+				r.connectionLock.Unlock()
+
+			}
+		}
+		for a := range starconns {
+			r.connectionLock.RLock()
+			v, ok := r.connections[conns[a]]
+			r.connectionLock.RUnlock()
+
+			if ok {
+				v.SendEvent(e)
+			} else {
+				//we need to start a connection, register it, and then send this connection down that channel
+				log.L.Infof("Sending event to %v, need to start a connection...", conns[a])
+				p, err := StartConnection(starconns[a], e.AffectedRoom.RoomID, r, false)
 				if err != nil {
 					log.L.Errorf("Couldn't start connection with %v", conns[a])
 					continue

@@ -1,6 +1,7 @@
 package nexus
 
 import (
+	"os"
 	"sync"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -22,6 +23,7 @@ func StartNexus() {
 
 		messengerRegistry:  make(map[string][]base.Registration),
 		roomMessengerIndex: make(map[string][]string),
+		roomNexus:          len(os.Getenv("ROOM_SYSTEM")) > 0,
 	}
 	//start the router
 	go N.start()
@@ -38,6 +40,8 @@ type Nexus struct {
 
 	registrationChannel chan base.RegistrationChange
 	incomingChannel     chan base.HubEventWrapper
+
+	roomNexus bool
 
 	once sync.Once
 }
@@ -115,6 +119,12 @@ func (n *Nexus) start() {
 				//where else do we send it?
 				switch e.Source {
 				case base.Repeater:
+
+					//local nexus don't propagate through the hubs, as the assumption is outside events come to every repeater in a local system.
+					if n.roomNexus {
+						continue
+					}
+
 					//we send to other hubs and spokes
 					for i := range n.hubRegistry {
 						n.hubRegistry[i].Channel <- e.EventWrapper

@@ -48,11 +48,13 @@ type PumpingStation struct {
 	ReceiveChannel chan events.Event
 	SendChannel    chan events.Event
 
+	dbDevConn bool
+
 	r *Repeater
 }
 
 //StartConnection takes a proc number, and will build the buffers, return it while asyncronously starting the connection
-func StartConnection(proc, room string, r *Repeater) (*PumpingStation, *nerr.E) {
+func StartConnection(proc, room string, r *Repeater, dbDevConn bool) (*PumpingStation, *nerr.E) {
 
 	toreturn := &PumpingStation{
 		readChannel:    make(chan events.Event, readBufferSize),
@@ -63,6 +65,7 @@ func StartConnection(proc, room string, r *Repeater) (*PumpingStation, *nerr.E) 
 		writeExit:      make(chan bool, 1),
 		errorChan:      make(chan error, 2),
 		ID:             proc,
+		dbDevConn:      dbDevConn, //is this a device we need to get from the database?
 		Room:           room,
 		r:              r,
 	}
@@ -98,15 +101,21 @@ func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (
 
 func (c *PumpingStation) start() {
 	log.L.Infof("Starting pumping station...")
-	//we need to get the address of the processor I want to talk to a
-	dev, err := db.GetDB().GetDevice(c.ID)
-	if err != nil {
-		log.L.Errorf("Couldn't retrieve device %v from database: %v", c.ID, err.Error())
-		c.r.UnregisterConnection(c.ID)
-		return
+	addr := ""
+	if c.dbDevConn {
+		//we need to get the address of the processor I want to talk to a
+		dev, err := db.GetDB().GetDevice(c.ID)
+		if err != nil {
+			log.L.Errorf("Couldn't retrieve device %v from database: %v", c.ID, err.Error())
+			c.r.UnregisterConnection(c.ID)
+			return
+		}
+		addr = dev.Address
+	} else {
+		addr = c.ID
 	}
 
-	err = c.openConn(dev.Address)
+	err := c.openConn(addr)
 	if err != nil {
 		log.L.Errorf("couldn't initializle for %v: %v", c.ID, err.Error())
 		c.r.UnregisterConnection(c.ID)
