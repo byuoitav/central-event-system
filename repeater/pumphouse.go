@@ -21,7 +21,7 @@ const (
 	writeBufferSize = 1024
 
 	//port for the translators on the devices
-	translatorport = "6998"
+	translatorport = "7101"
 )
 
 //PumpingStation .
