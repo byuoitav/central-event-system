@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -36,15 +35,15 @@ func main() {
 			log.L.Fatalf("Couldn't build messenger: %v", err.Error())
 		}
 	}
-	m1.SubscribeToRooms([]string{"ITB-M2", "ITB-M1"})
+	m1.SubscribeToRooms([]string{"ITB-M2", "ITB-M1", "ITB-1101"})
 	m1.SubscribeToRooms([]string{"ITB-M2"})
 	go func() {
 		a := m1.ReceiveEvent()
-		log.L.Infof("m1 Got event for %v", a.Room)
+		log.L.Infof("m1 Got event for %v", a.AffectedRoom.RoomID)
 	}()
 	go func() {
 		a := m2.ReceiveEvent()
-		log.L.Infof("m2 Got event for %v", a.Room)
+		log.L.Infof("m2 Got event for %v", a.AffectedRoom.RoomID)
 	}()
 
 	r := common.NewRouter()
@@ -94,17 +93,10 @@ func sendEvent(context echo.Context, m *messenger.Messenger, room string) error 
 		log.L.Warnf("Bad request")
 		return context.String(http.StatusBadRequest, err.Error())
 	}
-	b, err := json.Marshal(a)
-	if err != nil {
-		return context.String(http.StatusBadRequest, err.Error())
-	}
 
 	log.L.Infof("sending event")
 
-	m.SendEvent(base.EventWrapper{
-		Room:  room,
-		Event: b,
-	})
+	m.SendEvent(a)
 
 	return context.String(http.StatusOK, "ok")
 }

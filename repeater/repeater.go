@@ -6,7 +6,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/central-event-system/messenger"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
@@ -50,7 +49,7 @@ func init() {
 
 	SendMap, err = BuildSendList()
 	for k, v := range SendMap {
-		log.L.Infof("%v: %v", k, v)
+		log.L.Debugf("%v: %v", k, v)
 	}
 	if err != nil {
 		log.L.Fatalf("Couldn't initialize the repeater: %v", err.Error())
@@ -77,7 +76,7 @@ func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	var e events.Event
 	for {
 		e = <-r.HubSendBuffer
-		r.messenger.SendEvent(base.WrapEvent(e))
+		r.messenger.SendEvent(e)
 	}
 }
 
@@ -87,20 +86,14 @@ func (r *Repeater) runRepeater() {
 	go r.runRepeaterTranslator()
 
 	var e events.Event
-	var err *nerr.E
 	var conns []string
 	var starconns []string
 	for {
 		msg := r.messenger.ReceiveEvent()
-		e, err = base.UnwrapEvent(msg)
-		if err != nil {
-			log.L.Warnf("Couldn't unwrap event: %v", msg)
-			continue
-		}
 
 		//Get the list of places we're sending it
 		r.sendMapLock.RLock()
-		conns = r.sendMap[e.AffectedRoom.RoomID]
+		conns = r.sendMap[msg.AffectedRoom.RoomID]
 		starconns = r.sendMap["*"]
 		r.sendMapLock.RUnlock()
 
@@ -130,24 +123,24 @@ func (r *Repeater) runRepeater() {
 		}
 		for a := range starconns {
 			r.connectionLock.RLock()
-			v, ok := r.connections[conns[a]]
+			v, ok := r.connections[starconns[a]]
 			r.connectionLock.RUnlock()
 
 			if ok {
 				v.SendEvent(e)
 			} else {
 				//we need to start a connection, register it, and then send this connection down that channel
-				log.L.Infof("Sending event to %v, need to start a connection...", conns[a])
+				log.L.Infof("Sending event to %v, need to start a connection...", starconns[a])
 				p, err := StartConnection(starconns[a], e.AffectedRoom.RoomID, r, false)
 				if err != nil {
-					log.L.Errorf("Couldn't start connection with %v", conns[a])
+					log.L.Errorf("Couldn't start connection with %v", starconns[a])
 					continue
 				}
 
 				p.SendEvent(e)
 
 				r.connectionLock.Lock()
-				r.connections[conns[a]] = p
+				r.connections[starconns[a]] = p
 				r.connectionLock.Unlock()
 
 			}
