@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/central-event-system/messenger"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
@@ -23,7 +24,7 @@ type Repeater struct {
 	sendMap     map[string][]string //for future use, map of affected rooms to the control processors that care about that room
 	sendMapLock sync.RWMutex
 
-	HubSendBuffer chan events.Event
+	HubSendBuffer chan base.EventWrapper
 	RepeaterID    string
 }
 
@@ -61,7 +62,7 @@ func init() {
 func GetRepeater(s map[string][]string, m *messenger.Messenger, id string) *Repeater {
 	v := &Repeater{
 		sendMap:        s,
-		HubSendBuffer:  make(chan events.Event, 1000),
+		HubSendBuffer:  make(chan base.EventWrapper, 1000),
 		sendMapLock:    sync.RWMutex{},
 		connectionLock: sync.RWMutex{},
 		connections:    make(map[string]*PumpingStation),
@@ -75,9 +76,10 @@ func GetRepeater(s map[string][]string, m *messenger.Messenger, id string) *Repe
 
 //RunRepeaterTranslator will take an event and format it in the proper way to translate to the hub format
 func (r *Repeater) runRepeaterTranslator() *nerr.E {
-	var e events.Event
+	var e base.EventWrapper
 	for {
 		e = <-r.HubSendBuffer
+		log.L.Infof("got an event %v", e)
 		r.messenger.SendEvent(e)
 	}
 }
@@ -87,15 +89,15 @@ func (r *Repeater) runRepeater() {
 
 	go r.runRepeaterTranslator()
 
-	var e events.Event
+	var msg base.EventWrapper
 	var conns []string
 	var starconns []string
 	for {
-		msg := r.messenger.ReceiveEvent()
+		msg = r.messenger.Receive()
 
 		//Get the list of places we're sending it
 		r.sendMapLock.RLock()
-		conns = r.sendMap[msg.AffectedRoom.RoomID]
+		conns = r.sendMap[msg.Room]
 		starconns = r.sendMap["*"]
 		r.sendMapLock.RUnlock()
 
@@ -105,17 +107,17 @@ func (r *Repeater) runRepeater() {
 			r.connectionLock.RUnlock()
 
 			if ok {
-				v.SendEvent(e)
+				v.SendEvent(msg)
 			} else {
 				//we need to start a connection, register it, and then send this connection down that channel
 				log.L.Infof("Sending event to %v, need to start a connection...", conns[a])
-				p, err := StartConnection(conns[a], e.AffectedRoom.RoomID, r, true)
+				p, err := StartConnection(conns[a], msg.Room, r, true)
 				if err != nil {
 					log.L.Errorf("Couldn't start connection with %v", conns[a])
 					continue
 				}
 
-				p.SendEvent(e)
+				p.SendEvent(msg)
 
 				r.connectionLock.Lock()
 				r.connections[conns[a]] = p
@@ -129,17 +131,17 @@ func (r *Repeater) runRepeater() {
 			r.connectionLock.RUnlock()
 
 			if ok {
-				v.SendEvent(e)
+				v.SendEvent(msg)
 			} else {
 				//we need to start a connection, register it, and then send this connection down that channel
 				log.L.Infof("Sending event to %v, need to start a connection...", starconns[a])
-				p, err := StartConnection(starconns[a], e.AffectedRoom.RoomID, r, false)
+				p, err := StartConnection(starconns[a], msg.Room, r, false)
 				if err != nil {
 					log.L.Errorf("Couldn't start connection with %v", starconns[a])
 					continue
 				}
 
-				p.SendEvent(e)
+				p.SendEvent(msg)
 
 				r.connectionLock.Lock()
 				r.connections[starconns[a]] = p
@@ -156,7 +158,7 @@ func (r *Repeater) fireEvent(context echo.Context) error {
 	if err != nil {
 		return context.String(http.StatusBadRequest, fmt.Sprintf("Invalid request, must send an event. Error: %v", err.Error()))
 	}
-	r.HubSendBuffer <- e
+	r.HubSendBuffer <- base.WrapEvent(e)
 
 	return context.String(http.StatusOK, "ok")
 }

@@ -37,22 +37,27 @@ type Messenger struct {
 }
 
 //SendEvent will queue an event to be sent to the central hub
-func (h *Messenger) SendEvent(e events.Event) {
-	h.send(base.WrapEvent(e))
+func (h *Messenger) SendEvent(e base.EventWrapper) {
+	h.Send(e)
 }
 
-func (h *Messenger) send(b base.EventWrapper) {
+//Send .
+func (h *Messenger) Send(b base.EventWrapper) {
 	h.writeChannel <- b
 }
 
 //ReceiveEvent requests the next available event from the queue
 func (h *Messenger) ReceiveEvent() events.Event {
 	var e events.Event
-	json.Unmarshal(h.receive().Event, e)
+	err := json.Unmarshal(h.Receive().Event, &e)
+	if err != nil {
+		log.L.Errorf("Invalid event received: %v", err.Error())
+	}
 	return e
 }
 
-func (h *Messenger) receive() base.EventWrapper {
+//Receive .
+func (h *Messenger) Receive() base.EventWrapper {
 	return <-h.readChannel
 }
 

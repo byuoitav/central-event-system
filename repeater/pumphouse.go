@@ -5,10 +5,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/common/db"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
-	"github.com/byuoitav/common/v2/events"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,7 +21,9 @@ const (
 	writeBufferSize = 1024
 
 	//port for the translators on the devices
-	translatorport = "7101"
+	translatorport = "7110"
+
+//	translatorport = "7101"
 )
 
 //PumpingStation .
@@ -34,21 +36,24 @@ type PumpingStation struct {
 	remoteaddr string
 
 	//internal channels
-	readChannel  chan events.Event
-	writeChannel chan events.Event
+	readChannel  chan base.EventWrapper
+	writeChannel chan base.EventWrapper
 
-	readExit  chan bool
-	writeExit chan bool
-	errorChan chan error
+	readExit     chan bool
+	writeExit    chan bool
+	writeConfirm chan bool
+	timeoutChan  chan bool
+	errorChan    chan error
 
 	writeTimeout time.Time
 	readTimeout  time.Time
 
 	//external channels
-	ReceiveChannel chan events.Event
-	SendChannel    chan events.Event
+	ReceiveChannel chan base.EventWrapper
+	SendChannel    chan base.EventWrapper
 
 	dbDevConn bool
+	tick      bool //if we initialized the connection or not. Only those who initialize start a ticker
 
 	r *Repeater
 }
@@ -57,17 +62,20 @@ type PumpingStation struct {
 func StartConnection(proc, room string, r *Repeater, dbDevConn bool) (*PumpingStation, *nerr.E) {
 
 	toreturn := &PumpingStation{
-		readChannel:    make(chan events.Event, readBufferSize),
-		writeChannel:   make(chan events.Event, writeBufferSize),
+		readChannel:    make(chan base.EventWrapper, readBufferSize),
+		writeChannel:   make(chan base.EventWrapper, writeBufferSize),
 		ReceiveChannel: r.HubSendBuffer,
-		SendChannel:    make(chan events.Event, writeBufferSize),
+		SendChannel:    make(chan base.EventWrapper, writeBufferSize),
 		readExit:       make(chan bool, 1),
+		timeoutChan:    make(chan bool, 1),
 		writeExit:      make(chan bool, 1),
+		writeConfirm:   make(chan bool, 1),
 		errorChan:      make(chan error, 2),
 		ID:             proc,
 		dbDevConn:      dbDevConn, //is this a device we need to get from the database?
 		Room:           room,
 		r:              r,
+		tick:           true,
 	}
 
 	go toreturn.start()
@@ -78,18 +86,21 @@ func StartConnection(proc, room string, r *Repeater, dbDevConn bool) (*PumpingSt
 func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (*PumpingStation, *nerr.E) {
 
 	toreturn := &PumpingStation{
-		readChannel:    make(chan events.Event, readBufferSize),
-		writeChannel:   make(chan events.Event, writeBufferSize),
+		readChannel:    make(chan base.EventWrapper, readBufferSize),
+		writeChannel:   make(chan base.EventWrapper, writeBufferSize),
 		ReceiveChannel: r.HubSendBuffer,
-		SendChannel:    make(chan events.Event, writeBufferSize),
+		SendChannel:    make(chan base.EventWrapper, writeBufferSize),
 		readExit:       make(chan bool, 1),
+		timeoutChan:    make(chan bool, 1),
 		writeExit:      make(chan bool, 1),
+		writeConfirm:   make(chan bool, 1),
 		errorChan:      make(chan error, 2),
 		ID:             proc,
 		Room:           room,
 		r:              r,
 		conn:           conn,
 		remoteaddr:     conn.RemoteAddr().String(),
+		tick:           false,
 	}
 
 	go toreturn.startReadPump()
@@ -138,8 +149,10 @@ func (c *PumpingStation) openConn(addr string) *nerr.E {
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
+	fulladdr := fmt.Sprintf("ws://%s:%s/connect/%s/%s", addr, translatorport, c.Room, c.r.RepeaterID)
+	log.L.Debugf("Connecting to: %v", fulladdr)
 
-	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s:%s/connect/%s/%s", addr, translatorport, c.Room, c.r.RepeaterID), nil)
+	conn, _, err := dialer.Dial(fulladdr, nil)
 	if err != nil {
 		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", addr, err), "connection-error")
 	}
@@ -152,12 +165,25 @@ func (c *PumpingStation) openConn(addr string) *nerr.E {
 //We don't try to re-establish this one, nor do we worry about ping/pong joy - we're alive until one of us closes it - hopefully 5 seconds of inactivity
 func (c *PumpingStation) startReadPump() {
 
-	c.conn.SetReadDeadline(time.Now().Add(TTL))
+	defer func() {
+		if r := recover(); r != nil {
+			//clean up the connection
+			log.L.Debugf("[%v] recovering from panic: %v", c.ID, r)
+			c.errorChan <- fmt.Errorf("%v", r)
+			return
+		}
+	}()
+
+	c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
-		var event events.Event
-		err := c.conn.ReadJSON(&event)
+		_, b, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+			if er, ok := err.(*websocket.CloseError); ok {
+				log.L.Infof("[%v] Websocket closing: %v", c.ID, er)
+				c.errorChan <- err
+				return
+			}
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseMessage, websocket.CloseNormalClosure) {
 				log.L.Errorf("[%v] Websocket closing: %v", c.ID, err)
 			} else {
 				netErr, ok := err.(net.Error)
@@ -166,40 +192,62 @@ func (c *PumpingStation) startReadPump() {
 					case <-c.readExit:
 						return
 					default:
-						c.conn.SetReadDeadline(time.Now().Add(TTL))
+						err := c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+						if err != nil {
+							log.L.Warnf("couldn't set read deadline: %v", err.Error())
+						}
 						continue
 					}
 				}
 			}
-			log.L.Debugf("[%v] Returning", c.ID, err)
+			log.L.Debugf("[%v] Returning: %v", c.ID, err)
 			c.errorChan <- err
 			return
 		}
 
-		c.readChannel <- event
-
+		msg, err := base.ParseMessage(b)
+		if err != nil {
+			log.L.Errorf("Couldn't parse message %s.", b)
+		}
 		c.conn.SetReadDeadline(time.Now().Add(TTL))
+		c.readChannel <- msg
 	}
 }
 
 func (c *PumpingStation) startWritePump() {
 
+	defer func() {
+		c.writeConfirm <- true
+	}()
+
 	c.conn.SetWriteDeadline(time.Now().Add(TTL))
-	var msg events.Event
+	var msg base.EventWrapper
 
 	for {
 		select {
 		case msg = <-c.writeChannel:
 			//in the case of the write channel we just write it down the socket
-			err := c.conn.WriteJSON(msg)
+			err := c.conn.WriteMessage(websocket.BinaryMessage, base.PrepareMessage(msg))
 			if err != nil {
-				log.L.Warnf("[%v} Problem writing message: %v", c.ID, err.Error())
+				log.L.Debugf("[%v} Problem writing message: %v", c.ID, err.Error())
 				c.errorChan <- err
 				return
 			}
 			c.conn.SetWriteDeadline(time.Now().Add(TTL))
 
 		case <-c.writeExit:
+			return
+		case <-c.timeoutChan:
+
+			log.L.Infof("Timout. Closing.")
+
+			c.conn.SetWriteDeadline(time.Now().Add(TTL))
+
+			err := c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Now().Add(500*time.Millisecond))
+			if err != nil {
+				log.L.Debugf("[%v} Problem writing message: %v", c.ID, err.Error())
+				c.errorChan <- err
+			}
 			return
 		}
 	}
@@ -212,6 +260,7 @@ func (c *PumpingStation) startPumper() {
 
 		c.writeExit <- true
 		c.readExit <- true
+		<-c.writeConfirm
 
 		time.Sleep(TTL)
 		c.conn.Close()
@@ -222,16 +271,27 @@ func (c *PumpingStation) startPumper() {
 
 	//start our ticker
 	t := time.NewTicker(TTL)
-	log.L.Debugf("Ticker started")
+	if !c.tick {
+		//we cancel the ticker
+		t.Stop()
+	} else {
+		log.L.Debugf("Ticker started")
+	}
 	for {
 		select {
 		case <-t.C:
 			log.L.Debugf("tick. Checking for timeout.")
 			//check to see if read and write are after now
 			if time.Now().After(c.readTimeout) && time.Now().After(c.writeTimeout) {
+				log.L.Debugf("Timeout...")
+
+				//tell the write channel to timeout
+				c.timeoutChan <- true
+
 				//time to leave
 				return
 			}
+			log.L.Infof("No need to close... Continuing")
 
 		case err := <-c.errorChan:
 			//there was an error
@@ -239,10 +299,14 @@ func (c *PumpingStation) startPumper() {
 			return
 
 		case e := <-c.SendChannel:
+
+			log.L.Debugf("Send Channel: %v", e)
+
 			c.writeTimeout = time.Now().Add(TTL)
 			c.writeChannel <- e
 
 		case e := <-c.readChannel:
+			log.L.Debugf("Read Channel Channel: %v", e)
 			c.readTimeout = time.Now().Add(TTL)
 			c.ReceiveChannel <- e
 		}
@@ -251,6 +315,6 @@ func (c *PumpingStation) startPumper() {
 }
 
 //SendEvent .
-func (c *PumpingStation) SendEvent(e events.Event) {
+func (c *PumpingStation) SendEvent(e base.EventWrapper) {
 	c.SendChannel <- e
 }

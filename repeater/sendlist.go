@@ -56,6 +56,7 @@ func BuildSendList() (map[string][]string, *nerr.E) {
 		toReturn[rm] = append(toReturn[rm], devs[i].ID)
 	}
 
+	toReturn = map[string][]string{}
 	//if it's an in room system I know I need to send it to the central hub - so we'll add that as a '*'.
 	if len(os.Getenv("CENTRAL_REPEATER_ADDRESS")) < 1 {
 		log.L.Infof("CENTRAL_REPEATER_ADDRESS not set, event will not be sent to a central hub")
