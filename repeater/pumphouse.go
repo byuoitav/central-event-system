@@ -22,8 +22,7 @@ const (
 	writeBufferSize = 1024
 
 	//port for the translators on the devices
-	translatorport = "7110"
-	//	translatorport = "7101"
+	translatorport = "7101"
 
 	//WriteWait Time allowed to write a message to the peer.
 	WriteWait = 10 * time.Second
