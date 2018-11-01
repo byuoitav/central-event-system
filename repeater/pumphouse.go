@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -12,6 +11,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+//Pings are initalized by the hub.
+const ()
 const (
 	//TTL .
 	TTL = 5 * time.Second
@@ -22,8 +23,19 @@ const (
 
 	//port for the translators on the devices
 	translatorport = "7110"
+	//	translatorport = "7101"
 
-//	translatorport = "7101"
+	//WriteWait Time allowed to write a message to the peer.
+	WriteWait = 10 * time.Second
+
+	//PongWait Time allowed to read the next pong message from the peer.
+	PongWait = 60 * time.Second
+
+	//PingWait Time allowed to read the next pong message from the router.
+	PingWait = 90 * time.Second
+
+	//PingPeriod Send pings to peer with this period. Must be less than pongWait.
+	PingPeriod = (PongWait * 5) / 10
 )
 
 //PumpingStation .
@@ -39,8 +51,10 @@ type PumpingStation struct {
 	readChannel  chan base.EventWrapper
 	writeChannel chan base.EventWrapper
 
-	readExit     chan bool
-	writeExit    chan bool
+	readExit  chan bool
+	writeExit chan bool
+	pingExit  chan bool
+
 	writeConfirm chan bool
 	timeoutChan  chan bool
 	errorChan    chan error
@@ -67,10 +81,11 @@ func StartConnection(proc, room string, r *Repeater, dbDevConn bool) (*PumpingSt
 		ReceiveChannel: r.HubSendBuffer,
 		SendChannel:    make(chan base.EventWrapper, writeBufferSize),
 		readExit:       make(chan bool, 1),
+		pingExit:       make(chan bool, 1),
 		timeoutChan:    make(chan bool, 1),
 		writeExit:      make(chan bool, 1),
 		writeConfirm:   make(chan bool, 1),
-		errorChan:      make(chan error, 2),
+		errorChan:      make(chan error, 6),
 		ID:             proc,
 		dbDevConn:      dbDevConn, //is this a device we need to get from the database?
 		Room:           room,
@@ -91,6 +106,7 @@ func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (
 		ReceiveChannel: r.HubSendBuffer,
 		SendChannel:    make(chan base.EventWrapper, writeBufferSize),
 		readExit:       make(chan bool, 1),
+		pingExit:       make(chan bool, 1),
 		timeoutChan:    make(chan bool, 1),
 		writeExit:      make(chan bool, 1),
 		writeConfirm:   make(chan bool, 1),
@@ -111,7 +127,7 @@ func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (
 }
 
 func (c *PumpingStation) start() {
-	log.L.Infof("Starting pumping station...")
+	log.L.Debugf("Starting pumping station...")
 	addr := ""
 	if c.dbDevConn {
 		//we need to get the address of the processor I want to talk to a
@@ -133,10 +149,11 @@ func (c *PumpingStation) start() {
 		return
 	}
 
-	log.L.Infof("Connection to %v established, starting pumps...", addr)
+	log.L.Infof("[%v] Connection to %v established, starting pumps...", c.ID, addr)
 
 	go c.startReadPump()
 	go c.startWritePump()
+	go c.startPing()
 
 	c.startPumper()
 }
@@ -174,42 +191,24 @@ func (c *PumpingStation) startReadPump() {
 		}
 	}()
 
-	c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
 		_, b, err := c.conn.ReadMessage()
 		if err != nil {
 			if er, ok := err.(*websocket.CloseError); ok {
-				log.L.Infof("[%v] Websocket closing: %v", c.ID, er)
+				log.L.Debugf("[%v] Websocket closing: %v", c.ID, er)
 				c.errorChan <- err
 				return
 			}
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseMessage, websocket.CloseNormalClosure) {
-				log.L.Errorf("[%v] Websocket closing: %v", c.ID, err)
-			} else {
-				netErr, ok := err.(net.Error)
-				if ok && netErr.Timeout() {
-					select {
-					case <-c.readExit:
-						return
-					default:
-						err := c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-						if err != nil {
-							log.L.Warnf("couldn't set read deadline: %v", err.Error())
-						}
-						continue
-					}
-				}
-			}
+
 			log.L.Debugf("[%v] Returning: %v", c.ID, err)
 			c.errorChan <- err
 			return
 		}
 
-		msg, err := base.ParseMessage(b)
-		if err != nil {
-			log.L.Errorf("Couldn't parse message %s.", b)
+		msg, er := base.ParseMessage(b)
+		if er != nil {
+			log.L.Errorf("Couldn't parse message %s.", er)
 		}
-		c.conn.SetReadDeadline(time.Now().Add(TTL))
 		c.readChannel <- msg
 	}
 }
@@ -219,13 +218,12 @@ func (c *PumpingStation) startWritePump() {
 	defer func() {
 		c.writeConfirm <- true
 	}()
-
-	c.conn.SetWriteDeadline(time.Now().Add(TTL))
 	var msg base.EventWrapper
 
 	for {
 		select {
 		case msg = <-c.writeChannel:
+			c.conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			//in the case of the write channel we just write it down the socket
 			err := c.conn.WriteMessage(websocket.BinaryMessage, base.PrepareMessage(msg))
 			if err != nil {
@@ -233,16 +231,12 @@ func (c *PumpingStation) startWritePump() {
 				c.errorChan <- err
 				return
 			}
-			c.conn.SetWriteDeadline(time.Now().Add(TTL))
 
 		case <-c.writeExit:
 			return
+
 		case <-c.timeoutChan:
-
-			log.L.Infof("Timout. Closing.")
-
-			c.conn.SetWriteDeadline(time.Now().Add(TTL))
-
+			log.L.Infof("[%v] Timeout. Closing.", c.ID)
 			err := c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, ""), time.Now().Add(500*time.Millisecond))
 			if err != nil {
 				log.L.Debugf("[%v} Problem writing message: %v", c.ID, err.Error())
@@ -254,16 +248,29 @@ func (c *PumpingStation) startWritePump() {
 }
 
 func (c *PumpingStation) startPumper() {
-	log.L.Infof("Starting pumper...")
+
+	c.conn.SetPongHandler(
+		func(string) error {
+			c.conn.SetReadDeadline(time.Now().Add(PongWait))
+			return nil
+		})
+
+	log.L.Debug("Starting pumper...")
 	defer func() {
 		c.r.UnregisterConnection(c.ID)
 
 		c.writeExit <- true
 		c.readExit <- true
+		c.pingExit <- true
+
 		<-c.writeConfirm
 
+		err := c.conn.Close()
+		if err != nil {
+			log.L.Errorf("Couldn't close the connection.")
+		}
+
 		time.Sleep(TTL)
-		c.conn.Close()
 	}()
 
 	c.readTimeout = time.Now().Add(TTL)
@@ -291,27 +298,47 @@ func (c *PumpingStation) startPumper() {
 				//time to leave
 				return
 			}
-			log.L.Infof("No need to close... Continuing")
+			log.L.Debugf("No need to close... Continuing")
 
 		case err := <-c.errorChan:
 			//there was an error
-			log.L.Infof("[%v] error: %v. Closing..", c.ID, err.Error())
+			log.L.Debugf("[%v] error: %v. Closing..", c.ID, err.Error())
 			return
 
 		case e := <-c.SendChannel:
-
-			log.L.Debugf("Send Channel: %v", e)
+			log.L.Debugf("[%v] Sending message.", c.ID)
 
 			c.writeTimeout = time.Now().Add(TTL)
 			c.writeChannel <- e
 
 		case e := <-c.readChannel:
-			log.L.Debugf("Read Channel Channel: %v", e)
+			log.L.Debugf("[%v] Received message.", c.ID)
 			c.readTimeout = time.Now().Add(TTL)
 			c.ReceiveChannel <- e
 		}
 	}
 
+}
+
+//StartPing .
+func (c *PumpingStation) startPing() {
+	ticker := time.NewTicker(PingPeriod)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			err := c.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(WriteWait))
+			if err != nil {
+				log.L.Errorf("ping error: %v", err)
+				c.errorChan <- err
+				return
+			}
+
+		case <-c.pingExit:
+			return
+
+		}
+	}
 }
 
 //SendEvent .

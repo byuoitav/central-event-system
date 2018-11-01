@@ -79,7 +79,6 @@ func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	var e base.EventWrapper
 	for {
 		e = <-r.HubSendBuffer
-		log.L.Infof("got an event %v", e)
 		r.messenger.SendEvent(e)
 	}
 }
@@ -208,16 +207,16 @@ func (r *Repeater) RegisterConnection(c *PumpingStation) {
 	r.connections[c.ID] = c
 	r.connectionLock.Unlock()
 
-	log.L.Infof("connection to %v added", c.ID)
+	log.L.Debugf("connection to %v added", c.ID)
 }
 
 //UnregisterConnection .
 func (r *Repeater) UnregisterConnection(id string) {
-	log.L.Infof("Removing registration connection to %v", id)
+	log.L.Infof("[%v] Removing registration connection.", id)
 
 	r.connectionLock.Lock()
 	delete(r.connections, id)
 	r.connectionLock.Unlock()
 
-	log.L.Infof("Done removing registration for %v", id)
+	log.L.Debugf("Done removing registration for %v", id)
 }

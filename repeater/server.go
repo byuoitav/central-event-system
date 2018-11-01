@@ -10,7 +10,6 @@ import (
 )
 
 func main() {
-	log.SetLevel("debug")
 
 	//port := ":7110"
 	port := ":7101"

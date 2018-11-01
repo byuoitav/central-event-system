@@ -136,10 +136,13 @@ func (n *Nexus) start() {
 					}
 
 					//we only send to one repeatera
-					curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
-					log.L.Debugf("sending to repeater: %v", curRepeater)
-
-					n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+					if len(n.repeaterRegistry) > 0 {
+						curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
+						log.L.Debugf("sending to repeater: %v", curRepeater)
+						n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+					} else {
+						log.L.Infof("No repeaters registered")
+					}
 
 				default:
 					//discard

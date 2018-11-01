@@ -96,7 +96,7 @@ func sendEvent(context echo.Context, m *messenger.Messenger, room string) error 
 
 	log.L.Infof("sending event")
 
-	m.SendEvent(a)
+	m.SendEvent(base.WrapEvent(a))
 
 	return context.String(http.StatusOK, "ok")
 }
