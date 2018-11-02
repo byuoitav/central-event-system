@@ -232,6 +232,10 @@ func (n *Nexus) deregisterMessenger(r base.RegistrationChange) {
 
 				//remove from the index
 				index := n.roomMessengerIndex[r.ID]
+				if len(index) <= 1 {
+					n.roomMessengerIndex[r.ID] = []string{}
+				}
+
 				for j := range index {
 					if index[j] == cur {
 						index[i] = index[len(index)-1]

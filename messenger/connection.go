@@ -63,7 +63,7 @@ func (h *Messenger) Receive() base.EventWrapper {
 
 //SubscribeToRooms .
 func (h *Messenger) SubscribeToRooms(r []string) {
-	if len(r) < 1 {
+	if len(r) == 0 {
 		return
 	}
 
