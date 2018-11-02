@@ -37,8 +37,8 @@ type Messenger struct {
 }
 
 //SendEvent will queue an event to be sent to the central hub
-func (h *Messenger) SendEvent(e base.EventWrapper) {
-	h.Send(e)
+func (h *Messenger) SendEvent(e events.Event) {
+	h.Send(base.WrapEvent(e))
 }
 
 //Send .
