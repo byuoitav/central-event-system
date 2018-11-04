@@ -16,8 +16,7 @@ var m1 *messenger.Messenger
 var m2 *messenger.Messenger
 
 func main() {
-	HubAddress := "central-event-hub--development-1146686375.us-west-2.elb.amazonaws.com:7100"
-	//HubAddress := "localhost:7100"
+	HubAddress := "localhost:7100"
 	var err *nerr.E
 	log.SetLevel("debug")
 
