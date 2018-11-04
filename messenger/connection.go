@@ -24,6 +24,7 @@ type Messenger struct {
 	HubAddr        string
 	ConnectionType string
 
+	subscriptionList    map[string]bool
 	writeChannel        chan base.EventWrapper
 	subscriptionChannel chan base.SubscriptionChange
 	readChannel         chan base.EventWrapper
@@ -67,6 +68,10 @@ func (h *Messenger) SubscribeToRooms(r ...string) {
 		return
 	}
 
+	for i := range r {
+		h.subscriptionList[r[i]] = true
+	}
+
 	h.subscriptionChannel <- base.SubscriptionChange{
 		Rooms:  r,
 		Create: true,
@@ -78,6 +83,9 @@ func (h *Messenger) SubscribeToRooms(r ...string) {
 func (h *Messenger) UnsubscribeFromRooms(r ...string) {
 	if len(r) < 1 {
 		return
+	}
+	for i := range r {
+		delete(h.subscriptionList, r[i])
 	}
 
 	h.subscriptionChannel <- base.SubscriptionChange{
@@ -97,6 +105,7 @@ func BuildMessenger(HubAddress, connectionType string, bufferSize int) (*Messeng
 		readChannel:         make(chan base.EventWrapper, bufferSize),
 		readDone:            make(chan bool, 1),
 		writeDone:           make(chan bool, 1),
+		subscriptionList:    map[string]bool{},
 	}
 
 	// open connection with router
@@ -167,6 +176,8 @@ func (h *Messenger) retryConnection() {
 	go h.startReadPump()
 	go h.startWritePump()
 
+	//we need to resubscribe
+	h.SubscribeToRooms(h.getSubList()...)
 }
 
 func (h *Messenger) startReadPump() {
@@ -286,7 +297,16 @@ func (h *Messenger) GetState() interface{} {
 		values["connection"] = fmt.Sprintf("%v => %v", "local", h.HubAddr)
 	}
 
+	values["subscription-list"] = h.getSubList()
 	values["state"] = h.state
 	values["last-ping-time"] = h.lastPingTime.Format(time.RFC3339)
 	return values
+}
+
+func (h *Messenger) getSubList() []string {
+	toReturn := []string{}
+	for k := range h.subscriptionList {
+		toReturn = append(toReturn, k)
+	}
+	return toReturn
 }
