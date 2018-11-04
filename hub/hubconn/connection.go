@@ -51,6 +51,7 @@ type connection struct {
 
 	WriteChannel chan base.EventWrapper
 	ReadChannel  chan base.EventWrapper
+	exitChan     chan bool
 
 	conn  *websocket.Conn
 	nexus *nexus.Nexus
@@ -68,6 +69,7 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 		ID:           req.RemoteAddr + connType,
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
+		exitChan:     make(chan bool, 2),
 
 		conn:  conn,
 		nexus: nexus,
@@ -102,6 +104,7 @@ func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexu
 		ID:           conn.RemoteAddr().String() + connType,
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
+		exitChan:     make(chan bool, 2),
 
 		conn:  conn,
 		nexus: nexus,
@@ -121,6 +124,7 @@ func (h *connection) startReadPump() {
 	defer func() {
 		log.L.Infof(color.HiBlueString("[%v] read pump closing", h.ID))
 		h.nexus.DeregisterConnection(h.Rooms, h.Type, h.ID)
+		h.exitChan <- true
 		h.conn.Close()
 	}()
 
@@ -189,6 +193,9 @@ func (h *connection) startWritePump() {
 				log.L.Errorf("%v Error %v", h.ID, err.Error())
 				return
 			}
+		case <-h.exitChan:
+			h.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(WriteWait))
+			return
 
 		case <-ticker.C:
 			h.conn.SetWriteDeadline(time.Now().Add(WriteWait))

@@ -225,7 +225,7 @@ func (n *Nexus) deregisterMessenger(r base.RegistrationChange) {
 		//it does exist, find it to be removed
 		for i := range v {
 			if v[i].ID == r.ID {
-				log.L.Infof("Removing messenger registration", cur, r.ID)
+				log.L.Infof("Removing messenger registration %v:%v", cur, r.ID)
 				//remove it
 				v[i] = v[len(v)-1]
 				n.messengerRegistry[cur] = v[:len(v)-1]
@@ -238,15 +238,16 @@ func (n *Nexus) deregisterMessenger(r base.RegistrationChange) {
 
 				for j := range index {
 					if index[j] == cur {
-						index[i] = index[len(index)-1]
+						index[j] = index[len(index)-1]
 						n.roomMessengerIndex[r.ID] = index[:len(index)-1]
+						break
 					}
 				}
+				break
 			}
 		}
 		//it doesn't exist
-		log.L.Infof("Trying to remove unknown registration: %v:%v", cur, r.ID)
-		continue
+		log.L.Infof("Removed registration %v:%v", cur, r.ID)
 	}
 }
 

@@ -16,8 +16,10 @@ var m1 *messenger.Messenger
 var m2 *messenger.Messenger
 
 func main() {
+	//HubAddress := "central-event-hub--development-1146686375.us-west-2.elb.amazonaws.com:7100"
 	HubAddress := "localhost:7100"
 	var err *nerr.E
+	log.SetLevel("debug")
 
 	m1, err = messenger.BuildMessenger(HubAddress, base.Messenger, 1000)
 	if err != nil {
@@ -35,15 +37,19 @@ func main() {
 			log.L.Fatalf("Couldn't build messenger: %v", err.Error())
 		}
 	}
-	m1.SubscribeToRooms([]string{"ITB-M2", "ITB-M1", "ITB-1101"})
-	m1.SubscribeToRooms([]string{"ITB-M2"})
+	m1.SubscribeToRooms("ITB-1108", "ITB-1101")
+	m2.SubscribeToRooms("ITB-1108")
 	go func() {
-		a := m1.ReceiveEvent()
-		log.L.Infof("m1 Got event for %v", a.AffectedRoom.RoomID)
+		for {
+			a := m1.ReceiveEvent()
+			log.L.Infof("m1 Got event for %v", a.AffectedRoom.RoomID)
+		}
 	}()
 	go func() {
-		a := m2.ReceiveEvent()
-		log.L.Infof("m2 Got event for %v", a.AffectedRoom.RoomID)
+		for {
+			a := m2.ReceiveEvent()
+			log.L.Infof("m2 Got event for %v", a.AffectedRoom.RoomID)
+		}
 	}()
 
 	r := common.NewRouter()
@@ -65,9 +71,9 @@ func subscribe(context echo.Context) error {
 	room := context.Param("room")
 	log.L.Infof("Subscribting %v to %v", id, room)
 	if id == "1" {
-		m1.SubscribeToRooms([]string{room})
+		m1.SubscribeToRooms(room)
 	} else {
-		m2.SubscribeToRooms([]string{room})
+		m2.SubscribeToRooms(room)
 	}
 
 	return context.String(http.StatusOK, "ok")
@@ -78,9 +84,9 @@ func unsubscribe(context echo.Context) error {
 	room := context.Param("room")
 	log.L.Infof("Unsubscribing %v to %v", id, room)
 	if id == "1" {
-		m1.UnsubscribeFromRooms([]string{room})
+		m1.UnsubscribeFromRooms(room)
 	} else {
-		m2.UnsubscribeFromRooms([]string{room})
+		m2.UnsubscribeFromRooms(room)
 	}
 
 	return context.String(http.StatusOK, "ok")
@@ -96,7 +102,7 @@ func sendEvent(context echo.Context, m *messenger.Messenger, room string) error 
 
 	log.L.Infof("sending event")
 
-	m.SendEvent(base.WrapEvent(a))
+	m.SendEvent(a)
 
 	return context.String(http.StatusOK, "ok")
 }
