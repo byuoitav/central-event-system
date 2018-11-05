@@ -224,6 +224,7 @@ func (h *Messenger) startReadPump() {
 			log.L.Warnf("Poorly formed message %s: %v", b, er.Error())
 			continue
 		}
+
 		h.readChannel <- m
 	}
 
