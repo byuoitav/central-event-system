@@ -53,7 +53,7 @@ func GetHubAddresses() []string {
 	log.L.Debugf("My processor number: %v", myNum)
 
 	// +deployment not-required
-	for len(os.Getenv("STOP_REPLICATION")) != 0 {
+	for len(os.Getenv("STOP_REPLICATION")) == 0 {
 		// wait unil the database is ready for us
 		state, err := db.GetDB().GetStatus()
 		if err != nil || state != "completed" {
