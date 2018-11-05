@@ -38,10 +38,6 @@ func GetHubAddresses() []string {
 	log.L.Infof("Getting list of hubs I should connect to")
 	addresses := []string{}
 
-	//	id := os.Getenv("SYSTEM_ID")
-	//	values := strings.Split(strings.TrimSpace(id), "-")
-	//	roomID := fmt.Sprintf("%s-%s", values[0], values[1])
-
 	id := os.Getenv("SYSTEM_ID")
 	roomID := events.GenerateBasicDeviceInfo(id).RoomID
 
@@ -57,7 +53,7 @@ func GetHubAddresses() []string {
 	log.L.Debugf("My processor number: %v", myNum)
 
 	// +deployment not-required
-	for len(os.Getenv("STOP_REPLICATION")) > 0 {
+	for len(os.Getenv("STOP_REPLICATION")) != 0 {
 		// wait unil the database is ready for us
 		state, err := db.GetDB().GetStatus()
 		if err != nil || state != "completed" {
