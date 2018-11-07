@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -12,11 +13,8 @@ import (
 )
 
 //Pings are initalized by the hub.
-const ()
 const (
-	//TTL .
 	TTL = 5 * time.Second
-
 	//readBufferSize
 	readBufferSize  = 1024
 	writeBufferSize = 1024
@@ -160,12 +158,22 @@ func (c *PumpingStation) start() {
 func (c *PumpingStation) openConn(addr string) *nerr.E {
 	log.L.Debugf("Starting connection with %v", addr)
 
+	//check if addr has a port
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		log.L.Warnf("Couldn't parse port")
+	} else {
+		if port == "" {
+			addr = addr + ":" + translatorport
+		}
+	}
+
 	c.remoteaddr = addr
 
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
-	fulladdr := fmt.Sprintf("ws://%s:%s/connect/%s/%s", addr, translatorport, c.Room, c.r.RepeaterID)
+	fulladdr := fmt.Sprintf("ws://%s/connect/%s/%s", addr, c.Room, c.r.RepeaterID)
 	log.L.Debugf("Connecting to: %v", fulladdr)
 
 	conn, _, err := dialer.Dial(fulladdr, nil)

@@ -23,7 +23,8 @@ func main() {
 		addresses := GetHubAddresses()
 
 		for i := range addresses {
-			go hubconn.OpenConnection(addresses[i]+":7100", "/connect/hub", base.Hub, nexus.N)
+			log.L.Infof("Opening hub interconnection with %v", addresses[i])
+			go hubconn.OpenConnectionWithRetry(addresses[i], "/connect/hub", base.Hub, nexus.N)
 		}
 	}
 

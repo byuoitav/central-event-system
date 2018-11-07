@@ -37,7 +37,7 @@ func main() {
 		}
 	}
 	m1.SubscribeToRooms("ITB-1108", "ITB-1101")
-	m2.SubscribeToRooms("ITB-1108")
+	m2.SubscribeToRooms("ITB-1108", "BNSN-W002")
 	go func() {
 		for {
 			a := m1.ReceiveEvent()

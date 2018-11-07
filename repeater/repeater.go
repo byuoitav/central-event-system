@@ -79,7 +79,7 @@ func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	var e base.EventWrapper
 	for {
 		e = <-r.HubSendBuffer
-		r.messenger.SendEvent(e)
+		r.messenger.Send(e)
 	}
 }
 

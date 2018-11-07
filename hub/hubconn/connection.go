@@ -84,6 +84,39 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 
 }
 
+//OpenConnectionWithRetry reaches out to another central event system and establishes a websocket with it, and then registers it with the nexus
+//Do not include protocol with addr,  path will have all leading and trailing `/` characters removed
+func OpenConnectionWithRetry(addr string, path string, connType string, nexus *nexus.Nexus) error {
+	log.L.Infof("attempting to open connection with %v %v.", connType, addr)
+	MaxBackoff := 120 * time.Second //Wait at most 60 seconds between retrys
+	curBackoff := 2 * time.Second   //Start by waiting for 2 seconds
+	t := 0
+	l := 5
+
+	err := OpenConnection(addr, path, connType, nexus)
+
+	for err != nil {
+		log.L.Infof("connection to %v %v failed. Will retry in %s. ", connType, addr, curBackoff.String())
+		time.Sleep(curBackoff)
+		err = OpenConnection(addr, path, connType, nexus)
+		if err != nil {
+			if t >= l {
+				t = 0
+				if curBackoff < MaxBackoff {
+					curBackoff = (curBackoff / 2) + curBackoff
+				}
+				if curBackoff > MaxBackoff {
+					curBackoff = MaxBackoff
+				}
+			} else {
+				t++
+			}
+		}
+	}
+
+	return nil
+}
+
 //OpenConnection reaches out to another central event system and establishes a websocket with it, and then registers it with the nexus
 //Do not include protocol with addr,  path will have all leading and trailing `/` characters removed
 func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexus) error {
