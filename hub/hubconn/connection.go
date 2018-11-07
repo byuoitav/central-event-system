@@ -52,6 +52,10 @@ type connection struct {
 	WriteChannel chan base.EventWrapper
 	ReadChannel  chan base.EventWrapper
 	exitChan     chan bool
+	retry        bool // will try to reconnect if set to true
+	addr         string
+	path         string
+	connType     string
 
 	conn  *websocket.Conn
 	nexus *nexus.Nexus
@@ -93,12 +97,12 @@ func OpenConnectionWithRetry(addr string, path string, connType string, nexus *n
 	t := 0
 	l := 5
 
-	err := OpenConnection(addr, path, connType, nexus)
+	err := OpenConnection(addr, path, connType, nexus, true)
 
 	for err != nil {
 		log.L.Infof("connection to %v %v failed. Will retry in %s. ", connType, addr, curBackoff.String())
 		time.Sleep(curBackoff)
-		err = OpenConnection(addr, path, connType, nexus)
+		err = OpenConnection(addr, path, connType, nexus, true)
 		if err != nil {
 			if t >= l {
 				t = 0
@@ -119,7 +123,7 @@ func OpenConnectionWithRetry(addr string, path string, connType string, nexus *n
 
 //OpenConnection reaches out to another central event system and establishes a websocket with it, and then registers it with the nexus
 //Do not include protocol with addr,  path will have all leading and trailing `/` characters removed
-func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexus) error {
+func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexus, retry bool) error {
 	// open connection to the router
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
@@ -138,6 +142,10 @@ func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexu
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
 		exitChan:     make(chan bool, 2),
+		retry:        retry,
+		addr:         addr,
+		path:         path,
+		connType:     connType,
 
 		conn:  conn,
 		nexus: nexus,
@@ -208,6 +216,10 @@ func (h *connection) startWritePump() {
 		log.L.Infof("Write pump for %v closing...", h.ID)
 		ticker.Stop()
 		h.conn.Close()
+		if h.retry {
+			log.L.Infof("Connection %v is set for retry, will attempt to re-establish connection", h.ID)
+			go OpenConnectionWithRetry(h.addr, h.path, h.connType, h.nexus)
+		}
 	}()
 
 	for {
