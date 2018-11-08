@@ -42,6 +42,7 @@ var (
 )
 
 func init() {
+	log.SetLevel("debug")
 	HubAddress = os.Getenv("HUB_ADDRESS")
 	if len(HubAddress) < 1 {
 		log.L.Infof("No hub address specified, default to localhost:7100")

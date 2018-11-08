@@ -38,12 +38,15 @@ func BuildSendList() (map[string][]string, *nerr.E) {
 			break
 		}
 	}
+	log.L.Debugf("Getting all the event hubs from the databsae")
 
 	//We need to get all the devices with the role of repeater from the database - then figure out what rooms they care about, for now we just assume that it's their containing room.
 	devs, err := db.GetDB().GetDevicesByRoleAndType("EventRouter", "Pi3")
 	if err != nil {
 		return toReturn, nerr.Translate(err).Addf("Couldn't build send list")
 	}
+
+	log.L.Debugf("Got %v devices.", len(devs))
 
 	for i := range devs {
 		split := strings.Split(devs[i].ID, "-")
@@ -56,7 +59,6 @@ func BuildSendList() (map[string][]string, *nerr.E) {
 		toReturn[rm] = append(toReturn[rm], devs[i].ID)
 	}
 
-	toReturn = map[string][]string{}
 	//if it's an in room system I know I need to send it to the central hub - so we'll add that as a '*'.
 	if len(os.Getenv("CENTRAL_REPEATER_ADDRESS")) < 1 {
 		log.L.Infof("CENTRAL_REPEATER_ADDRESS not set, event will not be sent to a central hub")

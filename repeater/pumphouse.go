@@ -161,7 +161,8 @@ func (c *PumpingStation) openConn(addr string) *nerr.E {
 	//check if addr has a port
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		log.L.Warnf("Couldn't parse port")
+		log.L.Debugf("Couldn't split port %v", err)
+		addr = addr + ":" + translatorport
 	} else {
 		if port == "" {
 			addr = addr + ":" + translatorport
@@ -313,7 +314,7 @@ func (c *PumpingStation) startPumper() {
 			return
 
 		case e := <-c.SendChannel:
-			log.L.Debugf("[%v] Sending message.", c.ID)
+			log.L.Debugf("[%v] Sending message: %s:%s.", c.ID, e.Room, e.Event)
 
 			c.writeTimeout = time.Now().Add(TTL)
 			c.writeChannel <- e
