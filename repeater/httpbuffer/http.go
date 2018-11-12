@@ -33,7 +33,7 @@ func New(timeout time.Duration, bufferSize int) *HTTPBuffer {
 		incomingBuffer: make(chan eventWrapper, bufferSize),
 	}
 
-	toReturn.run()
+	go toReturn.run()
 	return toReturn
 }
 

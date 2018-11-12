@@ -60,10 +60,11 @@ func BuildSendList() (map[string][]string, *nerr.E) {
 	}
 
 	//if it's an in room system I know I need to send it to the central hub - so we'll add that as a '*'.
-	if len(os.Getenv("CENTRAL_REPEATER_ADDRESS")) < 1 {
-		log.L.Infof("CENTRAL_REPEATER_ADDRESS not set, event will not be sent to a central hub")
+	if len(os.Getenv("CENTRAL_REPEATER_ADDRESSES")) < 1 {
+		log.L.Infof("CENTRAL_REPEATER_ADDRESSES not set, event will not be sent to a central hub")
 	} else {
-		toReturn["*"] = []string{os.Getenv("CENTRAL_REPEATER_ADDRESS")}
+		vals := strings.Split(os.Getenv("CENTRAL_REPEATER_ADDRESSES"), ",")
+		toReturn["*"] = vals
 	}
 
 	log.L.Infof("Done, send list built for %v rooms.", len(toReturn))

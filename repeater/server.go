@@ -10,8 +10,6 @@ import (
 )
 
 func main() {
-	log.SetLevel("debug")
-
 	port := ":7101"
 	m, err := messenger.BuildMessenger(HubAddress, base.Repeater, 1000)
 	if err != nil {
@@ -22,6 +20,7 @@ func main() {
 		}
 	}
 
+	//do we want some sort of config here?
 	r := GetRepeater(SendMap, m, os.Getenv("SYSTEM_ID"))
 
 	router := common.NewRouter()
