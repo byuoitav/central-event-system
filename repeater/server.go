@@ -25,6 +25,7 @@ func main() {
 
 	router := common.NewRouter()
 
+	router.GET("/status", r.GetStatus)
 	router.GET("/connect/:room/:id", r.handleConnection)
 	router.POST("send", r.fireEvent)
 

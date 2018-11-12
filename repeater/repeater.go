@@ -13,6 +13,7 @@ import (
 	"github.com/byuoitav/central-event-system/repeater/httpbuffer"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
+	"github.com/byuoitav/common/status"
 	"github.com/byuoitav/common/v2/events"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
@@ -48,6 +49,8 @@ var (
 )
 
 func init() {
+	log.SetLevel("debug")
+
 	HubAddress = os.Getenv("HUB_ADDRESS")
 	if len(HubAddress) < 1 {
 		log.L.Infof("No hub address specified, default to localhost:7100")
@@ -91,8 +94,8 @@ func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	}
 }
 
-//RunRepeater .
 func (r *Repeater) runRepeater() {
+	log.L.Infof("Running repeater...")
 
 	go r.runRepeaterTranslator()
 
@@ -101,6 +104,7 @@ func (r *Repeater) runRepeater() {
 	var starconns []string
 	for {
 		msg = r.messenger.Receive()
+		log.L.Debugf("Distributing  an event for %v", msg.Room)
 
 		//Get the list of places we're sending it
 		r.sendMapLock.RLock()
@@ -242,4 +246,29 @@ func (r *Repeater) UnregisterConnection(id string) {
 	r.connectionLock.Unlock()
 
 	log.L.Debugf("Done removing registration for %v", id)
+}
+
+//Status .
+type Status struct {
+	Connections []PumpingStationStatus `json:"pumping-stations"`
+	HTTPStatus  httpbuffer.Status      `json:"http-buffer"`
+	Hub         interface{}            `json:"hub-status"`
+}
+
+//GetStatus .
+func (r *Repeater) GetStatus(context echo.Context) error {
+	st := status.NewBaseStatus()
+	s := Status{
+		Hub:        r.messenger.GetState(),
+		HTTPStatus: r.httpBuffer.GetStatus(),
+	}
+	r.connectionLock.RLock()
+	for i := range r.connections {
+		s.Connections = append(s.Connections, r.connections[i].GetStatus())
+	}
+	r.connectionLock.RUnlock()
+
+	st.Info["repeater"] = s
+
+	return context.JSON(http.StatusOK, st)
 }

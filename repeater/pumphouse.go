@@ -43,6 +43,7 @@ type PumpingStation struct {
 	Room string
 
 	remoteaddr string
+	starttime  time.Time
 
 	//internal channels
 	readChannel  chan base.EventWrapper
@@ -69,6 +70,44 @@ type PumpingStation struct {
 	r *Repeater
 }
 
+//PumpingStationStatus .
+type PumpingStationStatus struct {
+	RemoteAddress string `json:"remote-addr"`
+
+	Uptime time.Duration
+
+	ReadBufferPublicCap   int `json:"read-buffer-public-cap"`
+	ReadBufferPublicUtil  int `json:"read-buffer-public-util"`
+	ReadBufferPrivateCap  int `json:"read-buffer-private-cap"`
+	ReadBufferPrivateUtil int `json:"read-buffer-private-util"`
+
+	WriteBufferPublicCap   int `json:"write-buffer-public-cap"`
+	WriteBufferPublicUtil  int `json:"write-buffer-public-util"`
+	WriteBufferPrivateCap  int `json:"write-buffer-private-cap"`
+	WriteBufferPrivateUtil int `json:"write-buffer-private-util"`
+
+	ReadTimeout  time.Time `json:"read-timeout"`
+	WriteTimeout time.Time `json:"write-timeout"`
+}
+
+//GetStatus .
+func (c *PumpingStation) GetStatus() PumpingStationStatus {
+	return PumpingStationStatus{
+		RemoteAddress:          c.remoteaddr,
+		Uptime:                 time.Since(c.starttime),
+		ReadBufferPublicCap:    cap(c.ReceiveChannel),
+		ReadBufferPublicUtil:   len(c.ReceiveChannel),
+		ReadBufferPrivateCap:   cap(c.readChannel),
+		ReadBufferPrivateUtil:  len(c.readChannel),
+		WriteBufferPublicCap:   cap(c.SendChannel),
+		WriteBufferPublicUtil:  len(c.SendChannel),
+		WriteBufferPrivateCap:  cap(c.writeChannel),
+		WriteBufferPrivateUtil: len(c.writeChannel),
+		ReadTimeout:            c.readTimeout,
+		WriteTimeout:           c.writeTimeout,
+	}
+}
+
 //StartConnection takes a proc number, and will build the buffers, return it while asyncronously starting the connection
 func StartConnection(proc, room string, r *Repeater, dbDevConn bool) (*PumpingStation, *nerr.E) {
 
@@ -88,6 +127,7 @@ func StartConnection(proc, room string, r *Repeater, dbDevConn bool) (*PumpingSt
 		Room:           room,
 		r:              r,
 		tick:           true,
+		starttime:      time.Now(),
 	}
 
 	go toreturn.start()
@@ -114,6 +154,7 @@ func buildFromConnection(proc, room string, r *Repeater, conn *websocket.Conn) (
 		conn:           conn,
 		remoteaddr:     conn.RemoteAddr().String(),
 		tick:           false,
+		starttime:      time.Now(),
 	}
 
 	go toreturn.startReadPump()
