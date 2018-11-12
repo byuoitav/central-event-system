@@ -114,7 +114,7 @@ func (r *Repeater) runRepeater() {
 
 		for a := range conns {
 			//check if it's an http/s endpoint
-			if strings.HasPrefix(conns[a], "http://") {
+			if strings.HasPrefix(conns[a], "http") {
 				//we just package it up and send it out
 				r.httpBuffer.SendEvent(msg.Event, "POST", conns[a])
 				continue
@@ -146,7 +146,7 @@ func (r *Repeater) runRepeater() {
 		for a := range starconns {
 
 			//check if it's an http/s endpoint
-			if strings.HasPrefix(starconns[a], "http://") {
+			if strings.HasPrefix(starconns[a], "http") {
 				//we just package it up and send it out
 				r.httpBuffer.SendEvent(msg.Event, "POST", starconns[a])
 				continue
