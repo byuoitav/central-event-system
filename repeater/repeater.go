@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/central-event-system/messenger"
+	"github.com/byuoitav/central-event-system/repeater/httpbuffer"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
+	"github.com/byuoitav/common/status"
 	"github.com/byuoitav/common/v2/events"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
@@ -23,6 +27,9 @@ type Repeater struct {
 
 	sendMap     map[string][]string //for future use, map of affected rooms to the control processors that care about that room
 	sendMapLock sync.RWMutex
+
+	httpBuffer *httpbuffer.HTTPBuffer
+	httpAddrs  []string
 
 	HubSendBuffer chan base.EventWrapper
 	RepeaterID    string
@@ -43,6 +50,7 @@ var (
 
 func init() {
 	log.SetLevel("debug")
+
 	HubAddress = os.Getenv("HUB_ADDRESS")
 	if len(HubAddress) < 1 {
 		log.L.Infof("No hub address specified, default to localhost:7100")
@@ -69,7 +77,9 @@ func GetRepeater(s map[string][]string, m *messenger.Messenger, id string) *Repe
 		connections:    make(map[string]*PumpingStation),
 		messenger:      m,
 		RepeaterID:     id,
+		httpBuffer:     httpbuffer.New(2*time.Second, 1000),
 	}
+
 	go v.runRepeater()
 
 	return v
@@ -84,8 +94,8 @@ func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	}
 }
 
-//RunRepeater .
 func (r *Repeater) runRepeater() {
+	log.L.Infof("Running repeater...")
 
 	go r.runRepeaterTranslator()
 
@@ -94,6 +104,7 @@ func (r *Repeater) runRepeater() {
 	var starconns []string
 	for {
 		msg = r.messenger.Receive()
+		log.L.Debugf("Distributing  an event for %v", msg.Room)
 
 		//Get the list of places we're sending it
 		r.sendMapLock.RLock()
@@ -102,6 +113,13 @@ func (r *Repeater) runRepeater() {
 		r.sendMapLock.RUnlock()
 
 		for a := range conns {
+			//check if it's an http/s endpoint
+			if strings.HasPrefix(conns[a], "http") {
+				//we just package it up and send it out
+				r.httpBuffer.SendEvent(msg.Event, "POST", conns[a])
+				continue
+			}
+
 			r.connectionLock.RLock()
 			v, ok := r.connections[conns[a]]
 			r.connectionLock.RUnlock()
@@ -126,6 +144,14 @@ func (r *Repeater) runRepeater() {
 			}
 		}
 		for a := range starconns {
+
+			//check if it's an http/s endpoint
+			if strings.HasPrefix(starconns[a], "http") {
+				//we just package it up and send it out
+				r.httpBuffer.SendEvent(msg.Event, "POST", starconns[a])
+				continue
+			}
+
 			r.connectionLock.RLock()
 			v, ok := r.connections[starconns[a]]
 			r.connectionLock.RUnlock()
@@ -220,4 +246,29 @@ func (r *Repeater) UnregisterConnection(id string) {
 	r.connectionLock.Unlock()
 
 	log.L.Debugf("Done removing registration for %v", id)
+}
+
+//Status .
+type Status struct {
+	Connections []PumpingStationStatus `json:"pumping-stations"`
+	HTTPStatus  httpbuffer.Status      `json:"http-buffer"`
+	Hub         interface{}            `json:"hub-status"`
+}
+
+//GetStatus .
+func (r *Repeater) GetStatus(context echo.Context) error {
+	st := status.NewBaseStatus()
+	s := Status{
+		Hub:        r.messenger.GetState(),
+		HTTPStatus: r.httpBuffer.GetStatus(),
+	}
+	r.connectionLock.RLock()
+	for i := range r.connections {
+		s.Connections = append(s.Connections, r.connections[i].GetStatus())
+	}
+	r.connectionLock.RUnlock()
+
+	st.Info["repeater"] = s
+
+	return context.JSON(http.StatusOK, st)
 }

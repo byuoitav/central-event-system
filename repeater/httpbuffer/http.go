@@ -21,9 +21,23 @@ type eventWrapper struct {
 	method string
 }
 
+//Status .
+type Status struct {
+	BufferCap  int `json:"buffer-cap"`
+	BufferUtil int `json:"buffer-util"`
+}
+
 //SendEvent .
 func (h *HTTPBuffer) SendEvent(event []byte, method, address string) {
 	h.incomingBuffer <- eventWrapper{event, address, method}
+}
+
+//GetStatus .
+func (h *HTTPBuffer) GetStatus() Status {
+	return Status{
+		BufferCap:  cap(h.incomingBuffer),
+		BufferUtil: len(h.incomingBuffer),
+	}
 }
 
 //New .
@@ -33,7 +47,7 @@ func New(timeout time.Duration, bufferSize int) *HTTPBuffer {
 		incomingBuffer: make(chan eventWrapper, bufferSize),
 	}
 
-	toReturn.run()
+	go toReturn.run()
 	return toReturn
 }
 
