@@ -9,6 +9,7 @@ import (
 	"github.com/byuoitav/central-event-system/hub/nexus"
 	"github.com/byuoitav/common"
 	"github.com/byuoitav/common/log"
+	"github.com/byuoitav/common/status"
 	"github.com/labstack/echo"
 )
 
@@ -44,19 +45,20 @@ func main() {
 func mstatus(ctx echo.Context) error {
 	log.L.Debugf("MStatus request from %v", ctx.Request().RemoteAddr)
 
-	var s status.MStatus
+	var s status.Status
 	var err error
 
+	s.Info = map[string]interface{}{}
 	s.Bin = os.Args[0]
 
 	s.Version, err = status.GetMicroserviceVersion()
 	if err != nil {
-		s.Info = "failed to open version.txt"
+		s.Info["error"] = "failed to open version.txt"
 		s.StatusCode = status.Sick
 
 		return ctx.JSON(http.StatusInternalServerError, s)
 	}
-	s.Info = nexus.N.GetStatus()
+	s.Info["nexus"] = nexus.N.GetStatus()
 
 	s.StatusCode = status.Healthy
 
