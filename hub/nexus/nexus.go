@@ -1,6 +1,7 @@
 package nexus
 
 import (
+	"os"
 	"sync"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -22,6 +23,7 @@ func StartNexus() {
 
 		messengerRegistry:  make(map[string][]base.Registration),
 		roomMessengerIndex: make(map[string][]string),
+		roomNexus:          len(os.Getenv("ROOM_SYSTEM")) > 0,
 	}
 	//start the router
 	go N.start()
@@ -38,6 +40,8 @@ type Nexus struct {
 
 	registrationChannel chan base.RegistrationChange
 	incomingChannel     chan base.HubEventWrapper
+
+	roomNexus bool
 
 	once sync.Once
 }
@@ -115,6 +119,12 @@ func (n *Nexus) start() {
 				//where else do we send it?
 				switch e.Source {
 				case base.Repeater:
+
+					//local nexus don't propagate through the hubs, as the assumption is outside events come to every repeater in a local system.
+					if n.roomNexus {
+						continue
+					}
+
 					//we send to other hubs and spokes
 					for i := range n.hubRegistry {
 						n.hubRegistry[i].Channel <- e.EventWrapper
@@ -126,10 +136,13 @@ func (n *Nexus) start() {
 					}
 
 					//we only send to one repeatera
-					curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
-					log.L.Debugf("sending to repeater: %v", curRepeater)
-
-					n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+					if len(n.repeaterRegistry) > 0 {
+						curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
+						log.L.Debugf("sending to repeater: %v", curRepeater)
+						n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+					} else {
+						log.L.Infof("No repeaters registered")
+					}
 
 				default:
 					//discard
@@ -212,24 +225,29 @@ func (n *Nexus) deregisterMessenger(r base.RegistrationChange) {
 		//it does exist, find it to be removed
 		for i := range v {
 			if v[i].ID == r.ID {
-				log.L.Infof("Removing messenger registration", cur, r.ID)
+				log.L.Infof("Removing messenger registration %v:%v", cur, r.ID)
 				//remove it
 				v[i] = v[len(v)-1]
 				n.messengerRegistry[cur] = v[:len(v)-1]
 
 				//remove from the index
 				index := n.roomMessengerIndex[r.ID]
+				if len(index) <= 1 {
+					n.roomMessengerIndex[r.ID] = []string{}
+				}
+
 				for j := range index {
 					if index[j] == cur {
-						index[i] = index[len(index)-1]
+						index[j] = index[len(index)-1]
 						n.roomMessengerIndex[r.ID] = index[:len(index)-1]
+						break
 					}
 				}
+				break
 			}
 		}
 		//it doesn't exist
-		log.L.Infof("Trying to remove unknown registration: %v:%v", cur, r.ID)
-		continue
+		log.L.Infof("Removed registration %v:%v", cur, r.ID)
 	}
 }
 

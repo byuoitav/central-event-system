@@ -18,49 +18,64 @@ func main() {
 
 	nexus.StartNexus()
 
+	// if this hub is in a room, create an interconnection with the rest of the hubs in the room
+	if len(os.Getenv("ROOM_SYSTEM")) > 0 {
+		addresses := GetHubAddresses()
+
+		for i := range addresses {
+			log.L.Infof("Opening hub interconnection with %v", addresses[i])
+			go hubconn.OpenConnectionWithRetry(addresses[i], "/connect/hub", base.Hub, nexus.N)
+		}
+	}
+
 	router := common.NewRouter()
+
+	router.GET("/status", Status)
 	router.GET("/connect/:type", func(context echo.Context) error {
 		t := context.Param("type")
 		switch t {
 		case base.Messenger, base.Repeater, base.Hub:
 			break
 		default:
-			return context.JSON(http.StatusBadRequest, "Invalid connection type")
+			return context.String(http.StatusBadRequest, "invalid connection type")
 		}
+
 		err := hubconn.CreateConnection(context.Response().Writer, context.Request(), t, nexus.N)
 		if err != nil {
 			return context.JSON(http.StatusInternalServerError, err.Error())
 		}
+
 		return nil
 	})
 
 	router.POST("/interconnect/:address", func(context echo.Context) error {
 		return CreateInterconnection(context, nexus.N)
 	})
-	router.GET("/mstatus", mstatus)
-	router.GET("/status", mstatus)
+
 	router.Start(port)
 }
 
-func mstatus(ctx echo.Context) error {
-	log.L.Debugf("MStatus request from %v", ctx.Request().RemoteAddr)
+// Status returns the status of the hub
+func Status(ctx echo.Context) error {
+	log.L.Debugf("Status request from %v", ctx.Request().RemoteAddr)
 
-	var s status.MStatus
+	var s status.Status
 	var err error
 
 	s.Bin = os.Args[0]
+	s.Info = make(map[string]interface{})
+	s.Uptime = status.GetProgramUptime().String()
 
 	s.Version, err = status.GetMicroserviceVersion()
 	if err != nil {
-		s.Info = "failed to open version.txt"
+		s.Info["error"] = "failed to open version.txt"
 		s.StatusCode = status.Sick
 
 		return ctx.JSON(http.StatusInternalServerError, s)
 	}
-	s.Info = nexus.N.GetStatus()
 
+	s.Info["nexus"] = nexus.N.GetStatus()
 	s.StatusCode = status.Healthy
 
 	return ctx.JSON(http.StatusOK, s)
-
 }

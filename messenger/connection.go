@@ -9,6 +9,7 @@ import (
 	"github.com/byuoitav/central-event-system/hub/hubconn"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/nerr"
+	"github.com/byuoitav/common/v2/events"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 )
@@ -23,6 +24,7 @@ type Messenger struct {
 	HubAddr        string
 	ConnectionType string
 
+	subscriptionList    map[string]bool
 	writeChannel        chan base.EventWrapper
 	subscriptionChannel chan base.SubscriptionChange
 	readChannel         chan base.EventWrapper
@@ -36,19 +38,38 @@ type Messenger struct {
 }
 
 //SendEvent will queue an event to be sent to the central hub
-func (h *Messenger) SendEvent(b base.EventWrapper) {
+func (h *Messenger) SendEvent(e events.Event) {
+	h.Send(base.WrapEvent(e))
+}
+
+//Send .
+func (h *Messenger) Send(b base.EventWrapper) {
 	h.writeChannel <- b
 }
 
 //ReceiveEvent requests the next available event from the queue
-func (h *Messenger) ReceiveEvent() base.EventWrapper {
+func (h *Messenger) ReceiveEvent() events.Event {
+	var e events.Event
+	err := json.Unmarshal(h.Receive().Event, &e)
+	if err != nil {
+		log.L.Errorf("Invalid event received: %v", err.Error())
+	}
+	return e
+}
+
+//Receive .
+func (h *Messenger) Receive() base.EventWrapper {
 	return <-h.readChannel
 }
 
 //SubscribeToRooms .
-func (h *Messenger) SubscribeToRooms(r []string) {
-	if len(r) < 1 {
+func (h *Messenger) SubscribeToRooms(r ...string) {
+	if len(r) == 0 {
 		return
+	}
+
+	for i := range r {
+		h.subscriptionList[r[i]] = true
 	}
 
 	h.subscriptionChannel <- base.SubscriptionChange{
@@ -59,9 +80,12 @@ func (h *Messenger) SubscribeToRooms(r []string) {
 }
 
 //UnsubscribeFromRooms .
-func (h *Messenger) UnsubscribeFromRooms(r []string) {
+func (h *Messenger) UnsubscribeFromRooms(r ...string) {
 	if len(r) < 1 {
 		return
+	}
+	for i := range r {
+		delete(h.subscriptionList, r[i])
 	}
 
 	h.subscriptionChannel <- base.SubscriptionChange{
@@ -81,6 +105,7 @@ func BuildMessenger(HubAddress, connectionType string, bufferSize int) (*Messeng
 		readChannel:         make(chan base.EventWrapper, bufferSize),
 		readDone:            make(chan bool, 1),
 		writeDone:           make(chan bool, 1),
+		subscriptionList:    map[string]bool{},
 	}
 
 	// open connection with router
@@ -151,6 +176,8 @@ func (h *Messenger) retryConnection() {
 	go h.startReadPump()
 	go h.startWritePump()
 
+	//we need to resubscribe
+	h.SubscribeToRooms(h.getSubList()...)
 }
 
 func (h *Messenger) startReadPump() {
@@ -197,6 +224,7 @@ func (h *Messenger) startReadPump() {
 			log.L.Warnf("Poorly formed message %s: %v", b, er.Error())
 			continue
 		}
+
 		h.readChannel <- m
 	}
 
@@ -256,4 +284,30 @@ func (h *Messenger) startWritePump() {
 		}
 	}
 
+}
+
+// GetState returns the state of the messenger connection to the hub.
+func (h *Messenger) GetState() interface{} {
+	values := make(map[string]interface{})
+
+	values["hub"] = h.HubAddr
+
+	if h.conn != nil {
+		values["connection"] = fmt.Sprintf("%v => %v", h.conn.LocalAddr().String(), h.conn.RemoteAddr().String())
+	} else {
+		values["connection"] = fmt.Sprintf("%v => %v", "local", h.HubAddr)
+	}
+
+	values["subscription-list"] = h.getSubList()
+	values["state"] = h.state
+	values["last-ping-time"] = h.lastPingTime.Format(time.RFC3339)
+	return values
+}
+
+func (h *Messenger) getSubList() []string {
+	toReturn := []string{}
+	for k := range h.subscriptionList {
+		toReturn = append(toReturn, k)
+	}
+	return toReturn
 }

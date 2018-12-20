@@ -48,3 +48,6 @@ A messenger is a package that enables systems to have two way connection with th
 
 There may be 'write-only' messengers who subscribe to no events. The primary difference between a write-only messenger and an ingester is that events that flow through an ingester are handled as originating outside of the central event system, and thus will not be forwarded to the dispatchers. In addition the websockets from a messenger may or may not be persistent. 
 
+### Hub interconnection. 
+
+Hubs must be manually interconnected on startup. You can do this by sending a request to /interconnect/:address with the address of the second router to connect to. You should only send one request per interconnection. 

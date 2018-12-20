@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/byuoitav/central-event-system/hub/base"
 	"github.com/byuoitav/central-event-system/messenger"
 	"github.com/byuoitav/common"
@@ -8,9 +10,7 @@ import (
 )
 
 func main() {
-	log.SetLevel("debug")
-
-	port := ":7011"
+	port := ":7101"
 	m, err := messenger.BuildMessenger(HubAddress, base.Repeater, 1000)
 	if err != nil {
 		if err.Type == "retrying" {
@@ -20,10 +20,12 @@ func main() {
 		}
 	}
 
-	r := GetRepeater(SendMap, m)
+	//do we want some sort of config here?
+	r := GetRepeater(SendMap, m, os.Getenv("SYSTEM_ID"))
 
 	router := common.NewRouter()
 
+	router.GET("/status", r.GetStatus)
 	router.GET("/connect/:room/:id", r.handleConnection)
 	router.POST("send", r.fireEvent)
 

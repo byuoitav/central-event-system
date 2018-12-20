@@ -51,6 +51,11 @@ type connection struct {
 
 	WriteChannel chan base.EventWrapper
 	ReadChannel  chan base.EventWrapper
+	exitChan     chan bool
+	retry        bool // will try to reconnect if set to true
+	addr         string
+	path         string
+	connType     string
 
 	conn  *websocket.Conn
 	nexus *nexus.Nexus
@@ -68,6 +73,7 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 		ID:           req.RemoteAddr + connType,
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
+		exitChan:     make(chan bool, 2),
 
 		conn:  conn,
 		nexus: nexus,
@@ -82,9 +88,42 @@ func CreateConnection(resp http.ResponseWriter, req *http.Request, connType stri
 
 }
 
+//OpenConnectionWithRetry reaches out to another central event system and establishes a websocket with it, and then registers it with the nexus
+//Do not include protocol with addr,  path will have all leading and trailing `/` characters removed
+func OpenConnectionWithRetry(addr string, path string, connType string, nexus *nexus.Nexus) error {
+	log.L.Infof("attempting to open connection with %v %v.", connType, addr)
+	MaxBackoff := 120 * time.Second //Wait at most 60 seconds between retrys
+	curBackoff := 2 * time.Second   //Start by waiting for 2 seconds
+	t := 0
+	l := 5
+
+	err := OpenConnection(addr, path, connType, nexus, true)
+
+	for err != nil {
+		log.L.Infof("connection to %v %v failed. Will retry in %s. ", connType, addr, curBackoff.String())
+		time.Sleep(curBackoff)
+		err = OpenConnection(addr, path, connType, nexus, true)
+		if err != nil {
+			if t >= l {
+				t = 0
+				if curBackoff < MaxBackoff {
+					curBackoff = (curBackoff / 2) + curBackoff
+				}
+				if curBackoff > MaxBackoff {
+					curBackoff = MaxBackoff
+				}
+			} else {
+				t++
+			}
+		}
+	}
+
+	return nil
+}
+
 //OpenConnection reaches out to another central event system and establishes a websocket with it, and then registers it with the nexus
 //Do not include protocol with addr,  path will have all leading and trailing `/` characters removed
-func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexus) error {
+func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexus, retry bool) error {
 	// open connection to the router
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
@@ -102,6 +141,11 @@ func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexu
 		ID:           conn.RemoteAddr().String() + connType,
 		WriteChannel: make(chan base.EventWrapper, 1000),
 		ReadChannel:  make(chan base.EventWrapper, 5000),
+		exitChan:     make(chan bool, 2),
+		retry:        retry,
+		addr:         addr,
+		path:         path,
+		connType:     connType,
 
 		conn:  conn,
 		nexus: nexus,
@@ -121,6 +165,7 @@ func (h *connection) startReadPump() {
 	defer func() {
 		log.L.Infof(color.HiBlueString("[%v] read pump closing", h.ID))
 		h.nexus.DeregisterConnection(h.Rooms, h.Type, h.ID)
+		h.exitChan <- true
 		h.conn.Close()
 	}()
 
@@ -171,6 +216,10 @@ func (h *connection) startWritePump() {
 		log.L.Infof("Write pump for %v closing...", h.ID)
 		ticker.Stop()
 		h.conn.Close()
+		if h.retry {
+			log.L.Infof("Connection %v is set for retry, will attempt to re-establish connection", h.ID)
+			go OpenConnectionWithRetry(h.addr, h.path, h.connType, h.nexus)
+		}
 	}()
 
 	for {
@@ -189,6 +238,9 @@ func (h *connection) startWritePump() {
 				log.L.Errorf("%v Error %v", h.ID, err.Error())
 				return
 			}
+		case <-h.exitChan:
+			h.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(WriteWait))
+			return
 
 		case <-ticker.C:
 			h.conn.SetWriteDeadline(time.Now().Add(WriteWait))
