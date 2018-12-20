@@ -64,6 +64,7 @@ func Status(ctx echo.Context) error {
 
 	s.Bin = os.Args[0]
 	s.Info = make(map[string]interface{})
+	s.Uptime = status.GetProgramUptime().String()
 
 	s.Version, err = status.GetMicroserviceVersion()
 	if err != nil {
