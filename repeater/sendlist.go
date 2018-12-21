@@ -50,6 +50,10 @@ func BuildSendList() (map[string][]string, *nerr.E) {
 
 	for i := range devs {
 		split := strings.Split(devs[i].ID, "-")
+		if len(split) < 3 {
+			continue
+		}
+
 		rm := split[0] + "-" + split[1]
 		if RoomSystem && rm == roomID {
 			//its in our room, ignore
