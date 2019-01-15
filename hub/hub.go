@@ -62,7 +62,7 @@ func GetHubAddresses() []string {
 			continue
 		}
 
-		log.L.Infof("Database replication in state %v, Getting list of hub addresses")
+		log.L.Infof("Database replication in state %v, Getting list of hub addresses", state)
 
 		devices, err := db.GetDB().GetDevicesByRoomAndRole(roomID, "EventRouter")
 		if err != nil {
@@ -71,6 +71,7 @@ func GetHubAddresses() []string {
 		}
 
 		if len(devices) == 0 {
+			log.L.Warnf("No Event Routers found in the room, looping to wait for the database to download")
 			continue
 		}
 
