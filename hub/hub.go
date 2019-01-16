@@ -52,26 +52,17 @@ func GetHubAddresses() []string {
 	myNum, _ := strconv.Atoi(matches[0][1])
 	log.L.Debugf("My processor number: %v", myNum)
 
-	// +deployment not-required
-	for len(os.Getenv("STOP_REPLICATION")) == 0 {
-		// wait unil the database is ready for us
-		state, err := db.GetDB().GetStatus()
-		if err != nil || state != "completed" {
-			log.L.Infof("Database replication in state %v; Retrying in 5 seconds", state)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		log.L.Infof("Database replication in state %v, Getting list of hub addresses", state)
-
+	for {
 		devices, err := db.GetDB().GetDevicesByRoomAndRole(roomID, "EventRouter")
 		if err != nil {
 			log.L.Warnf("unable to get devices in %s: %s", roomID, err.Error())
 			time.Sleep(5 * time.Second)
+			continue
 		}
 
 		if len(devices) == 0 {
-			log.L.Warnf("No Event Routers found in the room, looping to wait for the database to download")
+			log.L.Warnf("No devices found in room. Couch may not have replicated completly yet, or this device may have the wrong hostname.")
+			time.Sleep(5 * time.Second)
 			continue
 		}
 
@@ -91,7 +82,6 @@ func GetHubAddresses() []string {
 			}
 
 			log.L.Debugf("Considering device: %v", device.ID)
-
 			matches = re.FindAllStringSubmatch(device.Name, -1)
 			if len(matches) != 1 {
 				continue
