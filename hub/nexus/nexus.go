@@ -108,7 +108,7 @@ func (n *Nexus) start() {
 			case e := <-n.incomingChannel:
 				log.L.Debugf("Sending Event from %v of type %v for room %v", e.SourceID, e.Source, e.Room)
 				if v, ok := n.messengerRegistry[e.Room]; ok {
-					//we ALWAYS send to spokes
+					//we ALWAYS send to messengers
 					for i := range v {
 						if e.Source != base.Messenger || v[i].ID != e.SourceID {
 							log.L.Debugf("%v", v[i].ID)
@@ -116,6 +116,18 @@ func (n *Nexus) start() {
 						}
 					}
 				}
+
+				//check the star case
+				if v, ok := n.messengerRegistry["*"]; ok {
+					//we ALWAYS send to messengers
+					for i := range v {
+						if e.Source != base.Messenger || v[i].ID != e.SourceID {
+							log.L.Debugf("%v", v[i].ID)
+							v[i].Channel <- e.EventWrapper
+						}
+					}
+				}
+
 				//where else do we send it?
 				switch e.Source {
 				case base.Repeater:
@@ -135,7 +147,7 @@ func (n *Nexus) start() {
 						n.hubRegistry[i].Channel <- e.EventWrapper
 					}
 
-					//we only send to one repeatera
+					//we only send to one repeater
 					if len(n.repeaterRegistry) > 0 {
 						curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
 						log.L.Debugf("sending to repeater: %v", curRepeater)
