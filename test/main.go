@@ -36,8 +36,10 @@ func main() {
 			log.L.Fatalf("Couldn't build messenger: %v", err.Error())
 		}
 	}
+
 	m1.SubscribeToRooms("ITB-1108", "ITB-1101")
 	m2.SubscribeToRooms("ITB-1108", "BNSN-W002")
+
 	go func() {
 		for {
 			a := m1.ReceiveEvent()
@@ -53,10 +55,10 @@ func main() {
 
 	r := common.NewRouter()
 	r.POST("/1", func(context echo.Context) error {
-		return sendEvent(context, m1, "ITB-M1")
+		return sendEvent(context, m1)
 	})
 	r.POST("/2", func(context echo.Context) error {
-		return sendEvent(context, m2, "ITB-M2")
+		return sendEvent(context, m2)
 	})
 
 	r.POST("/sub/:id/:room", subscribe)
@@ -91,7 +93,7 @@ func unsubscribe(context echo.Context) error {
 	return context.String(http.StatusOK, "ok")
 }
 
-func sendEvent(context echo.Context, m *messenger.Messenger, room string) error {
+func sendEvent(context echo.Context, m *messenger.Messenger) error {
 	var a events.Event
 	err := context.Bind(&a)
 	if err != nil {
