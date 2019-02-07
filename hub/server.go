@@ -63,6 +63,7 @@ func Status(ctx echo.Context) error {
 	var s status.Status
 	var err error
 
+	s.Info = map[string]interface{}{}
 	s.Bin = os.Args[0]
 	s.Info = make(map[string]interface{})
 	s.Uptime = status.GetProgramUptime().String()
