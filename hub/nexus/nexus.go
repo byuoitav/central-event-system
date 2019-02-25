@@ -112,7 +112,9 @@ func (n *Nexus) start() {
 					for i := range v {
 						if e.Source != base.Messenger || v[i].ID != e.SourceID {
 							log.L.Debugf("%v", v[i].ID)
-							v[i].Channel <- e.EventWrapper
+							if cap(v[i].Channel) > len(v[i].Channel) {
+								v[i].Channel <- e.EventWrapper
+							}
 						}
 					}
 				}
@@ -123,7 +125,9 @@ func (n *Nexus) start() {
 					for i := range v {
 						if e.Source != base.Messenger || v[i].ID != e.SourceID {
 							log.L.Debugf("%v", v[i].ID)
-							v[i].Channel <- e.EventWrapper
+							if cap(v[i].Channel) > len(v[i].Channel) {
+								v[i].Channel <- e.EventWrapper
+							}
 						}
 					}
 				}
@@ -140,18 +144,25 @@ func (n *Nexus) start() {
 					//we send to other hubs and spokes
 					for i := range n.hubRegistry {
 						n.hubRegistry[i].Channel <- e.EventWrapper
+						if cap(n.hubRegistry[i].Channel) > len(n.hubRegistry[i].Channel) {
+							n.hubRegistry[i].Channel <- e.EventWrapper
+						}
 					}
 				case base.Messenger:
 					//we send to hubs, spokes and dispatchers
 					for i := range n.hubRegistry {
-						n.hubRegistry[i].Channel <- e.EventWrapper
+						if cap(n.hubRegistry[i].Channel) > len(n.hubRegistry[i].Channel) {
+							n.hubRegistry[i].Channel <- e.EventWrapper
+						}
 					}
 
 					//we only send to one repeater
 					if len(n.repeaterRegistry) > 0 {
 						curRepeater = (curRepeater + 1) % len(n.repeaterRegistry)
 						log.L.Debugf("sending to repeater: %v", curRepeater)
-						n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+						if cap(n.repeaterRegistry[curRepeater].Channel) > len(n.repeaterRegistry[curRepeater].Channel) {
+							n.repeaterRegistry[curRepeater].Channel <- e.EventWrapper
+						}
 					} else {
 						log.L.Infof("No repeaters registered")
 					}

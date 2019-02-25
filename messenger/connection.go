@@ -54,6 +54,7 @@ func (h *Messenger) ReceiveEvent() events.Event {
 	if err != nil {
 		log.L.Errorf("Invalid event received: %v", err.Error())
 	}
+
 	return e
 }
 
