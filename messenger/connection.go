@@ -54,6 +54,7 @@ func (h *Messenger) ReceiveEvent() events.Event {
 	if err != nil {
 		log.L.Errorf("Invalid event received: %v", err.Error())
 	}
+
 	return e
 }
 
@@ -101,6 +102,10 @@ func (h *Messenger) UnsubscribeFromRooms(r ...string) {
 
 //BuildMessenger starts a connection to the hub provided, and then returns the connection (messenger)
 func BuildMessenger(HubAddress, connectionType string, bufferSize int) (*Messenger, *nerr.E) {
+	if len(HubAddress) == 0 {
+		return nil, nerr.Createf("error", "unable to build messenger - invalid hub address '%s'", HubAddress)
+	}
+
 	log.L.Infof("starting messenger with %v, connection type %v, buffer size %v", HubAddress, connectionType, bufferSize)
 	h := &Messenger{
 		HubAddr:             HubAddress,
