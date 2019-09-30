@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"os"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/byuoitav/common"
 	"github.com/byuoitav/common/log"
 	"github.com/byuoitav/common/status"
+	"github.com/byuoitav/common/v2/events"
 	"github.com/labstack/echo"
 )
 
@@ -53,6 +56,8 @@ func main() {
 		return CreateInterconnection(context, nexus.N)
 	})
 
+	router.POST("/event", Event)
+
 	router.Start(port)
 }
 
@@ -80,4 +85,33 @@ func Status(ctx echo.Context) error {
 	s.StatusCode = status.Healthy
 
 	return ctx.JSON(http.StatusOK, s)
+}
+
+// Event sends an event to the hub using an http endpoint instead of a messenger
+func Event(ctx echo.Context) error {
+	var e events.Event
+	req := ctx.Request()
+	eventBytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		log.L.Warnf("There was an error reading the body: %s", err)
+		return err
+	}
+	err = json.Unmarshal(eventBytes, &e)
+	if err != nil {
+		log.L.Warnf("There was an error unmarshaling the event: %s", err)
+		return err
+	}
+
+	nerr := nexus.N.Submit(
+		base.EventWrapper{
+			Room:  e.AffectedRoom.RoomID,
+			Event: eventBytes,
+		},
+		base.Messenger,
+		req.RemoteAddr+base.Messenger)
+
+	if nerr != nil {
+		log.L.Warnf("There was an error submitting the event: %s", nerr)
+	}
+	return ctx.String(http.StatusOK, "Processing")
 }
