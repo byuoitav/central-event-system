@@ -86,7 +86,6 @@ func (n *Nexus) DeregisterConnection(rooms []string, connType, connID string) *n
 
 //Submit sends an event to the hub for routing
 func (n *Nexus) Submit(e base.EventWrapper, Source, SourceID string) *nerr.E {
-
 	if len(Source) == 0 || len(SourceID) == 0 {
 		return nerr.Create("Can't submit blank source or sourceID", "invalid")
 	}
