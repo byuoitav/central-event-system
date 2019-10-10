@@ -52,7 +52,8 @@ func (h *Messenger) ReceiveEvent() events.Event {
 	var e events.Event
 	err := json.Unmarshal(h.Receive().Event, &e)
 	if err != nil {
-		log.L.Errorf("Invalid event received: %v", err.Error())
+		log.L.Warnf("Invalid event received: %v", err.Error())
+		return events.Event{}
 	}
 
 	return e
