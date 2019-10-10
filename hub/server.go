@@ -93,11 +93,15 @@ func Event(c echo.Context) error {
 
 	eventBytes, err := ioutil.ReadAll(req.Body)
 	if err != nil {
+		log.L.Warnf("unable to read body: " + err.Error())
 		return c.String(http.StatusBadRequest, "unable to read body: "+err.Error())
 	}
 
+	log.L.Debugf("Submitting event from %s: %s", c.Request().RemoteAddr, eventBytes)
+
 	err = json.Unmarshal(eventBytes, &e)
 	if err != nil {
+		log.L.Warnf("unable to unmarshal body: " + err.Error())
 		return c.String(http.StatusBadRequest, "unable to unmarshal body: "+err.Error())
 	}
 
@@ -109,6 +113,7 @@ func Event(c echo.Context) error {
 		base.Messenger,
 		req.RemoteAddr+base.Messenger)
 	if nerr != nil {
+		log.L.Warnf("unable to submit event: " + nerr.Error())
 		return c.String(http.StatusInternalServerError, "unable to submit event: "+nerr.Error())
 	}
 
