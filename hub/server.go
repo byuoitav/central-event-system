@@ -18,7 +18,6 @@ import (
 
 func main() {
 	port := ":7100"
-	log.SetLevel("debug")
 
 	nexus.StartNexus()
 
@@ -88,18 +87,18 @@ func Status(ctx echo.Context) error {
 }
 
 // Event sends an event to the hub using an http endpoint instead of a messenger
-func Event(ctx echo.Context) error {
+func Event(c echo.Context) error {
 	var e events.Event
-	req := ctx.Request()
+	req := c.Request()
+
 	eventBytes, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		log.L.Warnf("There was an error reading the body: %s", err)
-		return err
+		return c.String(http.StatusBadRequest, "unable to read body: "+err.Error())
 	}
+
 	err = json.Unmarshal(eventBytes, &e)
 	if err != nil {
-		log.L.Warnf("There was an error unmarshaling the event: %s", err)
-		return err
+		return c.String(http.StatusBadRequest, "unable to unmarshal body: "+err.Error())
 	}
 
 	nerr := nexus.N.Submit(
@@ -109,9 +108,9 @@ func Event(ctx echo.Context) error {
 		},
 		base.Messenger,
 		req.RemoteAddr+base.Messenger)
-
 	if nerr != nil {
-		log.L.Warnf("There was an error submitting the event: %s", nerr)
+		return c.String(http.StatusInternalServerError, "unable to submit event: "+nerr.Error())
 	}
-	return ctx.String(http.StatusOK, "Processing")
+
+	return c.String(http.StatusOK, "Processing event")
 }
