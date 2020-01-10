@@ -6,7 +6,7 @@ In the central event system there are three major players
 2. Repeaters
 3. Messengers
 
-The roles are discussed below
+The roles are discussed below.
 
 ### Hub
 
@@ -21,11 +21,11 @@ Where the RoomID acts as the routing tag which controls which messengers the eve
 
 All events that flow into a hub are sent to at most one repeater (each event will be sent to a single repeater, but there may be multiple repeaters), and the repeaters determine if the event is to be routed to outside devices. 
 
-When a messenger is spun up it will establish a connection with the hub. Similar to event nodes a messenger is not a purpose built server, but other services become messengers via the messenger package. Messengers 'register' rooms for which they would like to recieve events, the Hub maintains this list and will only send events to messengers who have registered to recieve events for that room. 
+When a messenger is spun up, it will establish a connection with the hub. Similar to event nodes, a messenger is not a purpose-built server, but other services become messengers via the messenger package. Messengers 'register' rooms for which they would like to recieve events, the Hub maintains this list and will only send events to messengers who have registered to recieve events for that room. 
 
 Repeaters and messengers should be matched to at most one hub, but there may be multiple hubs
 
-There are three sources for a hub. Routing based on source is as follows
+There are three sources for a hub. Routing based on source is as follows:
 
 
 |Source|Destination(s)|
