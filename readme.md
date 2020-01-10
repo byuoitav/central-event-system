@@ -10,7 +10,7 @@ The roles are discussed below
 
 ### Hub
 
-In the central event system the hub acts as the router, or distributor for events, taking events from repeaters and messengers, and redistriubuting thme. The hub connects to messengers and repeaters via websockets, and each message is in the format of 
+In the central event system the hub acts as the router, or distributor for events, taking events from repeaters and messengers, and redistriubuting them. The hub connects to messengers and repeaters via websockets, and each message is in the format of 
 
 ```
 ROOMID\n
