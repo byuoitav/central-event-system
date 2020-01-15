@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -59,6 +60,12 @@ func main() {
 	})
 	r.POST("/2", func(context echo.Context) error {
 		return sendEvent(context, m2)
+	})
+	r.POST("/3", func(context echo.Context) error {
+		fmt.Println("Killing messengers")
+		m1.Kill()
+		m2.Kill()
+		return context.String(http.StatusOK, "ok")
 	})
 
 	r.POST("/sub/:id/:room", subscribe)
