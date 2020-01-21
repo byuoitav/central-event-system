@@ -11,6 +11,7 @@ import (
 
 func main() {
 	port := ":7101"
+
 	m, err := messenger.BuildMessenger(HubAddress, base.Repeater, 1000)
 	if err != nil {
 		if err.Type == "retrying" {
