@@ -297,7 +297,6 @@ func (c *PumpingStation) startWritePump() {
 }
 
 func (c *PumpingStation) startPumper() {
-
 	c.conn.SetPongHandler(
 		func(string) error {
 			c.conn.SetReadDeadline(time.Now().Add(PongWait))
@@ -328,11 +327,12 @@ func (c *PumpingStation) startPumper() {
 	//start our ticker
 	t := time.NewTicker(TTL)
 	if !c.tick {
-		//we cancel the ticker
 		t.Stop()
 	} else {
 		log.L.Debugf("Ticker started")
+		defer t.Stop()
 	}
+
 	for {
 		select {
 		case <-t.C:
@@ -347,8 +347,8 @@ func (c *PumpingStation) startPumper() {
 				//time to leave
 				return
 			}
-			log.L.Debugf("No need to close... Continuing")
 
+			log.L.Debugf("No need to close... Continuing")
 		case err := <-c.errorChan:
 			//there was an error
 			log.L.Debugf("[%v] error: %v. Closing..", c.ID, err.Error())
@@ -366,7 +366,6 @@ func (c *PumpingStation) startPumper() {
 			c.ReceiveChannel <- e
 		}
 	}
-
 }
 
 //StartPing .
