@@ -2,7 +2,9 @@ package messenger
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/byuoitav/central-event-system/hub/base"
@@ -35,6 +37,7 @@ type Messenger struct {
 	writeDone    chan bool
 	lastPingTime time.Time
 	state        string
+	killChan     chan struct{}
 }
 
 //SendEvent will queue an event to be sent to the central hub
@@ -117,6 +120,7 @@ func BuildMessenger(HubAddress, connectionType string, bufferSize int) (*Messeng
 		readDone:            make(chan bool, 1),
 		writeDone:           make(chan bool, 1),
 		subscriptionList:    map[string]bool{},
+		killChan:            make(chan struct{}),
 	}
 
 	// open connection with router
@@ -192,12 +196,19 @@ func (h *Messenger) retryConnection() {
 }
 
 func (h *Messenger) startReadPump() {
+	closed := false
 	defer func() {
 		h.conn.Close()
-		log.L.Warnf("Connection to hub %v is dying.", h.HubAddr)
-		h.state = "down"
+		if !closed {
+			log.L.Warnf("Connection to hub %v is dying.", h.HubAddr)
+			h.state = "down"
 
-		h.readDone <- true
+			h.readDone <- true
+
+		} else {
+			log.L.Infof("Closing messenger read pump")
+			h.readDone <- true
+		}
 	}()
 
 	h.conn.SetPingHandler(
@@ -215,42 +226,63 @@ func (h *Messenger) startReadPump() {
 	h.conn.SetReadDeadline(time.Now().Add(hubconn.PingWait))
 
 	for {
-		t, b, err := h.conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.L.Errorf("Websocket closing: %v", err)
-			}
-			log.L.Errorf("Error: %v", err)
+		select {
+		case <-h.killChan:
+			closed = true
 			return
-		}
+		default:
+			if closed {
+				return
+			}
+			t, b, err := h.conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+					log.L.Errorf("Websocket closing: %v", err)
+				}
+				var opErr *net.OpError
+				if errors.As(err, &opErr) {
+					closed = true
+					return
+				}
+				log.L.Errorf("Error: %v", err)
+				return
+			}
 
-		if t != websocket.BinaryMessage {
-			log.L.Warnf("Unknown message type %v", t)
-			continue
-		}
+			if t != websocket.BinaryMessage {
+				log.L.Warnf("Unknown message type %v", t)
+				continue
+			}
 
-		//parse out room name
-		m, er := base.ParseMessage(b)
-		if er != nil {
-			log.L.Warnf("Poorly formed message %s: %v", b, er.Error())
-			continue
-		}
+			//parse out room name
+			m, er := base.ParseMessage(b)
+			if er != nil {
+				log.L.Warnf("Poorly formed message %s: %v", b, er.Error())
+				continue
+			}
 
-		h.readChannel <- m
+			h.readChannel <- m
+		}
 	}
 
 }
 
 func (h *Messenger) startWritePump() {
+	closed := false
 	defer func() {
 		h.conn.Close()
-		log.L.Warnf("Connection to hub %v is dying. Trying to resurrect.", h.HubAddr)
-		h.state = "down"
+		if !closed {
+			log.L.Warnf("Connection to hub %v is dying. Trying to resurrect.", h.HubAddr)
+			h.state = "down"
 
-		h.writeDone <- true
+			h.writeDone <- true
 
-		//try to reconnect
-		h.retryConnection()
+			//try to reconnect
+			h.retryConnection()
+
+		} else {
+			log.L.Infof("Closing messenger write pump")
+			h.writeDone <- true
+		}
 	}()
 
 	for {
@@ -291,7 +323,9 @@ func (h *Messenger) startWritePump() {
 				log.L.Errorf("Problem writing message to socket: %v", err.Error())
 				return
 			}
-
+		case <-h.killChan:
+			closed = true
+			return
 		}
 	}
 
@@ -321,4 +355,10 @@ func (h *Messenger) getSubList() []string {
 		toReturn = append(toReturn, k)
 	}
 	return toReturn
+}
+
+// Kill kills a messenger
+func (h *Messenger) Kill() {
+	log.L.Infof("Connection to hub %v is being closed.", h.HubAddr)
+	close(h.killChan)
 }
