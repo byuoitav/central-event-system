@@ -215,7 +215,7 @@ func (c *PumpingStation) openConn(addr string) *nerr.E {
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
-	fulladdr := fmt.Sprintf("ws://%s/connect/%s/%s", addr, c.Room, c.r.RepeaterID)
+	fulladdr := fmt.Sprintf("%s/connect/%s/%s", addr, c.Room, c.r.RepeaterID)
 	log.L.Debugf("Connecting to: %v", fulladdr)
 
 	conn, _, err := dialer.Dial(fulladdr, nil)

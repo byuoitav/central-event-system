@@ -15,7 +15,7 @@ module "event_repeater" {
     "DB_ADDRESS"       = "https://${data.aws_ssm_parameter.prd_db_addr.value}",
     "DB_USERNAME"      = data.aws_ssm_parameter.prd_db_username.value,
     "DB_PASSWORD"      = data.aws_ssm_parameter.prd_db_password.value,
-    "HUB_ADDRESS"      = "event-hub"
+    "HUB_ADDRESS"      = "ws://event-hub"
     "STOP_REPLICATION" = "true"
     "SYSTEM_ID"        = "aws-repeater-system"
     "VERSION"          = "0.1.0"
