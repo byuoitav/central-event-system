@@ -17,7 +17,7 @@ var m1 *messenger.Messenger
 var m2 *messenger.Messenger
 
 func main() {
-	HubAddress := "localhost:7100"
+	HubAddress := "ws://localhost:7100"
 	var err *nerr.E
 	log.SetLevel("debug")
 

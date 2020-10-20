@@ -175,7 +175,7 @@ func (c *PumpingStation) start() {
 			c.r.UnregisterConnection(c.ID)
 			return
 		}
-		addr = dev.Address
+		addr = "ws://" + dev.Address
 	} else {
 		addr = c.ID
 	}
