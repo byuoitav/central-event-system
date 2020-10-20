@@ -22,7 +22,7 @@ import (
 // TODO put port into a const
 var dev sync.Once
 
-//CreateInterconnection .
+//CreateInterconnection . fyi this will NOT work :)
 func CreateInterconnection(context echo.Context, n *nexus.Nexus) error {
 	hubaddr := context.Param("address")
 	err := hubconn.OpenConnection(hubaddr+":7100", "/connect/hub", base.Hub, n, false)
@@ -72,7 +72,7 @@ func GetHubAddresses() []string {
 					log.L.Infof("Development device. Adding all hubs in room")
 				})
 
-				addresses = append(addresses, device.Address+":7100")
+				addresses = append(addresses, "ws://"+device.Address+":7100")
 				continue
 			}
 
@@ -97,7 +97,7 @@ func GetHubAddresses() []string {
 			}
 
 			log.L.Debugf("Adding hub %v to address list.", device.Address)
-			addresses = append(addresses, device.Address+":7100")
+			addresses = append(addresses, "ws://"+device.Address+":7100")
 		}
 
 		break
