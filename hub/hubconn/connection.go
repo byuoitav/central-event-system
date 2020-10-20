@@ -181,7 +181,7 @@ func (h *connection) startReadPump() {
 		messageType, b, err := h.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.L.Errorf("Websocket closing unexpectedly: %v", err)
+				log.L.Errorf("[%s] [%s] Websocket closing unexpectedly: %v", h.ID, h.addr, err)
 				return
 			}
 			log.L.Errorf("Error with Read Pump for %v: %v", h.ID, err)
