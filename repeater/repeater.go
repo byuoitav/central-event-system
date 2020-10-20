@@ -53,8 +53,8 @@ func init() {
 
 	HubAddress = os.Getenv("HUB_ADDRESS")
 	if len(HubAddress) < 1 {
-		log.L.Infof("No hub address specified, default to localhost:7100")
-		HubAddress = "localhost:7100"
+		log.L.Infof("No hub address specified, default to ws://localhost:7100")
+		HubAddress = "ws://localhost:7100"
 	}
 	var err *nerr.E
 
