@@ -12,11 +12,11 @@ module "event_repeater" {
   public_urls = ["event-repeater.av.byu.edu"]
   private     = true
   container_env = {
-    "DB_ADDRESS"       = data.aws_ssm_parameter.prd_db_addr.value,
+    "DB_ADDRESS"       = "https://${data.aws_ssm_parameter.prd_db_addr.value}",
     "DB_USERNAME"      = data.aws_ssm_parameter.prd_db_username.value,
     "DB_PASSWORD"      = data.aws_ssm_parameter.prd_db_password.value,
-    "HUB_ADDRESS"      = "http://event-hub"
-    "STOP_REPLICATIOn" = "true"
+    "HUB_ADDRESS"      = "event-hub"
+    "STOP_REPLICATION" = "true"
     "SYSTEM_ID"        = "aws-repeater-system"
     "VERSION"          = "0.1.0"
   }
