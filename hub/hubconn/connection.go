@@ -131,7 +131,7 @@ func OpenConnection(addr string, path string, connType string, nexus *nexus.Nexu
 
 	path = strings.Trim(path, "/")
 
-	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s/%s", addr, path), nil)
+	conn, _, err := dialer.Dial(fmt.Sprintf("%s/%s", addr, path), nil)
 	if err != nil {
 		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", addr, err), "connection-error")
 	}

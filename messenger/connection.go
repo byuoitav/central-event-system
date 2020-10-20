@@ -152,7 +152,7 @@ func (h *Messenger) openConnection() error {
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(fmt.Sprintf("ws://%s/connect/%s", h.HubAddr, h.ConnectionType), nil)
+	conn, _, err := dialer.Dial(fmt.Sprintf("%s/connect/%s", h.HubAddr, h.ConnectionType), nil)
 	if err != nil {
 		return nerr.Create(fmt.Sprintf("failed opening websocket with %v: %s", h.HubAddr, err), "connection-error")
 	}
