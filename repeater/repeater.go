@@ -19,7 +19,7 @@ import (
 	"github.com/labstack/echo"
 )
 
-//Repeater .
+// Repeater .
 type Repeater struct {
 	messenger      *messenger.Messenger
 	connectionLock sync.RWMutex
@@ -49,7 +49,7 @@ var (
 )
 
 func init() {
-	log.SetLevel("debug")
+	//log.SetLevel("debug")
 
 	HubAddress = os.Getenv("HUB_ADDRESS")
 	if len(HubAddress) < 1 {
@@ -67,7 +67,7 @@ func init() {
 	}
 }
 
-//GetRepeater .
+// GetRepeater .
 func GetRepeater(s map[string][]string, m *messenger.Messenger, id string) *Repeater {
 	v := &Repeater{
 		sendMap:        s,
@@ -85,7 +85,7 @@ func GetRepeater(s map[string][]string, m *messenger.Messenger, id string) *Repe
 	return v
 }
 
-//RunRepeaterTranslator will take an event and format it in the proper way to translate to the hub format
+// RunRepeaterTranslator will take an event and format it in the proper way to translate to the hub format
 func (r *Repeater) runRepeaterTranslator() *nerr.E {
 	var e base.EventWrapper
 	for {
@@ -210,7 +210,7 @@ func (r *Repeater) handleConnection(context echo.Context) error {
 	return nil
 }
 
-//RegisterConnection .
+// RegisterConnection .
 func (r *Repeater) RegisterConnection(c *PumpingStation) {
 	log.L.Infof("registering connection to %v", c.ID)
 	//check to see if it's a duplicate id
@@ -237,7 +237,7 @@ func (r *Repeater) RegisterConnection(c *PumpingStation) {
 	log.L.Debugf("connection to %v added", c.ID)
 }
 
-//UnregisterConnection .
+// UnregisterConnection .
 func (r *Repeater) UnregisterConnection(id string) {
 	log.L.Infof("[%v] Removing registration connection.", id)
 
@@ -248,14 +248,14 @@ func (r *Repeater) UnregisterConnection(id string) {
 	log.L.Debugf("Done removing registration for %v", id)
 }
 
-//Status .
+// Status .
 type Status struct {
 	Connections []PumpingStationStatus `json:"pumping-stations"`
 	HTTPStatus  httpbuffer.Status      `json:"http-buffer"`
 	Hub         interface{}            `json:"hub-status"`
 }
 
-//GetStatus .
+// GetStatus .
 func (r *Repeater) GetStatus(context echo.Context) error {
 	st := status.NewBaseStatus()
 	s := Status{
