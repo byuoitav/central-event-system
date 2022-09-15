@@ -1,6 +1,7 @@
 NAME := central-event-repeater
 OWNER := byuoitav
-PKG := github.com/${OWNER}/${NAME}
+REPO := central-event-system
+PKG := github.com/${OWNER}/${REPO}/repeater
 DOCKER_URL := docker.pkg.github.com
 
 # version:
@@ -53,27 +54,27 @@ docker: clean build
 ifeq (${COMMIT_HASH}, ${TAG})
 	@echo Building dev container with tag ${COMMIT_HASH}
 
-	@echo Building container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${COMMIT_HASH}
-	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-amd64 -t ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${COMMIT_HASH} dist
+	@echo Building container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${COMMIT_HASH}
+	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-amd64 -t ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${COMMIT_HASH} dist
 
-	@echo Building container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${COMMIT_HASH} 
-	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-arm -t ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${COMMIT_HASH} dist
+	@echo Building container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${COMMIT_HASH} 
+	@docker build -f dockerfile-arm --build-arg NAME=${NAME}-linux-arm -t ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${COMMIT_HASH} dist
 else ifneq ($(shell echo ${TAG} | grep -x -E ${DEV_TAG_REGEX}),)
 	@echo Building dev container with tag ${TAG}
 
-	@echo Building container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${TAG}
-	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-amd64 -t ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${TAG} dist
+	@echo Building container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${TAG}
+	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-amd64 -t ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${TAG} dist
 
 	@echo Building container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${TAG}
-	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-arm -t ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${TAG} dist
+	@docker build -f dockerfile-arm --build-arg NAME=${NAME}-linux-arm -t ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${TAG} dist
 else ifneq ($(shell echo ${TAG} | grep -x -E ${PRD_TAG_REGEX}),)
 	@echo Building prd container with tag ${TAG}
 
-	@echo Building container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}:${TAG}
-	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-amd64 -t ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}:${TAG} dist
+	@echo Building container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}:${TAG}
+	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-amd64 -t ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}:${TAG} dist
 
-	@echo Building container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm:${TAG}
-	@docker build -f dockerfile --build-arg NAME=${NAME}-linux-arm -t ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm:${TAG} dist
+	@echo Building container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm:${TAG}
+	@docker build -f dockerfile-arm --build-arg NAME=${NAME}-linux-arm -t ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm:${TAG} dist
 endif
 
 deploy: docker
@@ -83,27 +84,27 @@ deploy: docker
 ifeq (${COMMIT_HASH}, ${TAG})
 	@echo Pushing dev container with tag ${COMMIT_HASH}
 
-	@echo Pushing container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${COMMIT_HASH}
-	@docker push ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${COMMIT_HASH}
+	@echo Pushing container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${COMMIT_HASH}
+	@docker push ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${COMMIT_HASH}
 
-	@echo Pushing container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${COMMIT_HASH} 
-	@docker push ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${COMMIT_HASH}
+	@echo Pushing container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${COMMIT_HASH} 
+	@docker push ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${COMMIT_HASH}
 else ifneq ($(shell echo ${TAG} | grep -x -E ${DEV_TAG_REGEX}),)
 	@echo Pushing dev container with tag ${TAG}
 
-	@echo Pushing container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${TAG}
-	@docker push ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-dev:${TAG}
+	@echo Pushing container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${TAG}
+	@docker push ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${TAG}
 
-	@echo Pushing container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${TAG}
-	@docker push ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm-dev:${TAG}
+	@echo Pushing container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${TAG}
+	@docker push ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${TAG}
 else ifneq ($(shell echo ${TAG} | grep -x -E ${PRD_TAG_REGEX}),)
 	@echo Pushing prd container with tag ${TAG}
 
-	@echo Pushing container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}:${TAG}
-	@docker push ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}:${TAG}
+	@echo Pushing container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${TAG}
+	@docker push ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-dev:${TAG}
 	
-	@echo Pushing container ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm:${TAG}
-	@docker push ${DOCKER_URL}/${OWNER}/${NAME}/${NAME}-arm:${TAG}
+	@echo Pushing container ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${TAG}
+	@docker push ${DOCKER_URL}/${OWNER}/${REPO}/${NAME}-arm-dev:${TAG}
 endif
 
 clean:
