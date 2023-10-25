@@ -9,6 +9,10 @@ module "event_repeater" {
   image_version  = "latest"
   container_port = 7101
   repo_url       = "https://github.com/byuoitav/central-event-hub"
+  cluster        = "av-dev"
+  environment    = "dev"
+  route53_domain = "avdev.byu.edu"
+
 
   // optional
   public_urls = ["event-repeater-dev.avdev.byu.edu"]
