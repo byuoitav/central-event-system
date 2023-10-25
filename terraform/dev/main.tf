@@ -23,7 +23,7 @@ provider "kubernetes" {
 }
 
 data "aws_ssm_parameter" "prd_db_addr" {
-  name = "/env/couch-new-address"
+  name = "/env/couch-address"
 }
 
 data "aws_ssm_parameter" "prd_db_username" {
