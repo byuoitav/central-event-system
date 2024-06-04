@@ -4,24 +4,24 @@ module "event_repeater" {
 
 
   // required
-  name           = "event-repeater-dev"
+  name           = "event-repeater-prd"
   image          = "byuoitav/central-event-repeater"
   image_version  = "latest"
   container_port = 7101
   repo_url       = "https://github.com/byuoitav/central-event-hub"
-  cluster        = "av-dev"
-  environment    = "dev"
-  route53_domain = "avdev.ensign.edu"
+  cluster        = "av-prd"
+  environment    = "production"
+  route53_domain = "av.ensign.edu"
 
 
   // optional
-  public_urls = ["event-repeater-dev.avdev.ensign.edu"]
+  public_urls = ["event-repeater-prd.av.ensign.edu"]
   private     = true
   container_env = {
     "DB_ADDRESS"       = "https://${data.aws_ssm_parameter.prd_db_addr.value}",
     "DB_USERNAME"      = data.aws_ssm_parameter.prd_db_username.value,
     "DB_PASSWORD"      = data.aws_ssm_parameter.prd_db_password.value,
-    "HUB_ADDRESS"      = "ws://event-hub-dev"
+    "HUB_ADDRESS"      = "ws://event-hub-prd"
     "STOP_REPLICATION" = "true"
     "SYSTEM_ID"        = "aws-repeater-system"
     "VERSION"          = "0.1.0"

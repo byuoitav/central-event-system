@@ -1,11 +1,11 @@
 terraform {
   backend "s3" {
-    bucket         = "terraform-state-storage-975050263614"
-    dynamodb_table = "terraform-state-lock-975050263614"
+    bucket         = "terraform-state-storage-058264360105"
+    dynamodb_table = "terraform-state-lock-058264360105"
     region         = "us-west-2"
 
     // THIS MUST BE UNIQUE
-    key = "ensign-dev-central-event-system.tfstate"
+    key = "ensign-prd-central-event-system.tfstate"
   }
 }
 
@@ -14,7 +14,7 @@ provider "aws" {
 }
 
 data "aws_ssm_parameter" "eks_cluster_endpoint" {
-  name = "/eks/ensign-av-dev-cluster-endpoint"
+  name = "/eks/ensign-av-prd-cluster-endpoint"
 }
 
 provider "kubernetes" {
@@ -23,13 +23,13 @@ provider "kubernetes" {
 }
 
 data "aws_ssm_parameter" "prd_db_addr" {
-  name = "/env/ensign-dev-couch-address"
+  name = "/env/ensign-prd-couch-address"
 }
 
 data "aws_ssm_parameter" "prd_db_username" {
-  name = "/env/ensign-dev-couch-username"
+  name = "/env/ensign-prd-couch-username"
 }
 
 data "aws_ssm_parameter" "prd_db_password" {
-  name = "/env/ensign-dev-couch-password"
+  name = "/env/ensign-prd-couch-password"
 }
