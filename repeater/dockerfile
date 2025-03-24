@@ -3,7 +3,7 @@ MAINTAINER Clinton Reeder <clinton_reeder@byu.edu>
 
 ARG NAME
 
-COPY ${name} /app
+COPY ${NAME} /app
 
 # add any required files/folders here
 
